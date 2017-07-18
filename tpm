@@ -1,0 +1,212 @@
+#!/bin/sh
+
+set -e
+
+# Этот коммент имеет отношение ко всем скриптам tpm. Файлы и папки, созданные mktemp имеют странные права. Поэтому мы работаем не с ними непосредственно, а с файлами и папками внутри папок, созданных mktemp. Если создать с помощью mktemp папку, использовать её в качестве DESTDIR, затем запаковать в tar-архив, а затем распаковать в /, то / получит права drwx------, а это приведёт к неработоспособности sudo. Также я следил, чтобы не сделать случайно юзера владельцем /
+# Этот коммент имеет отношение ко всем скриптам tpm. Всегда удаляем $TEMP с помощью rm -rf, т. к. $TEMP может содержать git-репозиторий
+# На всех UNIX-подобных системах, которые были в моём распоряжении, был gzip. xz не было на OpenBSD 5.5. Так что в качестве компрессора выбираем gzip
+# Считаю зависимость от mktemp нормальной, его обычно можно достать
+
+ON_EXIT=":"
+trap 'eval "$ON_EXIT"' EXIT
+
+download(){
+	printf '%s' "Downloading $1... "
+
+	WGET_OUTPUT="$(mktemp --tmpdir tpm-wget-output-XXXXXXXX)"
+
+	if ! wget -O "$2" "$1" 2> "$WGET_OUTPUT"; then
+		rm -f "$2" || :
+		printf 'failed\n' || :
+		cat "$WGET_OUTPUT" >&2 || :
+		rm "$WGET_OUTPUT"
+		return 1
+	fi
+
+	rm "$WGET_OUTPUT"
+
+	printf 'done\n'
+}
+
+case "$1" in
+	install-package)
+		CONTROL="$2"
+		PACKAGE_FILE="$3"
+
+		[ "$(id -u)" != 0 ] && echo "${0##*/}: you are not root" >&2 && exit 1
+
+		. "$CONTROL"
+
+		[ -e "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list" ] && echo "${0##*/}: $PACKAGE is already installed" >&2 && exit 1
+
+		for I in $DEPENDS; do
+			"$0" install "$I"
+		done
+
+		echo "Installing $PACKAGE"
+
+		mkdir -p "/opt/tpm-store/var/lib/tpm/info/${PACKAGE%/*}"
+
+		TEMP="$(mktemp --directory --tmpdir tpm-XXXXXXXX)"
+		ON_EXIT="rm -rf \"\$TEMP\" || :; $ON_EXIT"
+
+		( cd /; tar --numeric-owner -xzv ) < "$PACKAGE_FILE" > "$TEMP/list"
+
+		sed 's/^\.//' "$TEMP/list" > "$TEMP/list2"
+		sed 's~^/$~/.~' "$TEMP/list2" > "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list"
+
+		# Делаем cat'ом, чтобы файл создался с нужными правами и владельцем
+		cat "$CONTROL" > "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.control"
+		;;
+
+	install)
+		PACKAGE="$2"
+
+		[ "$(id -u)" != 0 ] && echo "${0##*/}: you are not root" >&2 && exit 1
+
+		case "$PACKAGE" in
+			prog:*)
+				PACKAGE_SUFFIX="${PACKAGE#prog:}"
+				COMMAND="${PACKAGE_SUFFIX%%:*}"
+				DEBIAN_PACKAGE="${PACKAGE_SUFFIX#*:}"
+
+				type "$COMMAND" > /dev/null 2>&1 && exit
+
+				if ! type apt-get > /dev/null 2>&1; then
+					echo "${0##*/}: cannot install $PACKAGE: command not found and no apt-get" >&2
+					exit 1
+				fi
+
+				# Будем считать, что наличие файла /var/lib/apt/lists/lock говорит о том, что как минимум один раз был выполнен apt-get update
+				if ! [ -e /var/lib/apt/lists/lock ]; then
+					apt-get update
+				fi
+
+				# LC_ALL=C, т. к. если не установлены локали, то apt-get будет выдавать кучу сообщений об ошибках
+				# Нужно писать именно -o Apt::Install-Recommends=false, а не --no-install-recommends, т. к. apt из sarge не понимает --no-install-recommends
+				LC_ALL=C apt-get install -y -o Apt::Install-Recommends=false "$DEBIAN_PACKAGE"
+
+				if ! type "$COMMAND" > /dev/null 2>&1; then
+					echo "${0##*/}: $PACKAGE: пакет установлен, но команды всё равно нет" >&2
+					exit 1
+				fi
+				;;
+
+			*)
+				[ -e "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list" ] && exit
+
+				. "${0%/*}/../etc/tpm.conf"
+
+				TEMP="$(mktemp --directory --tmpdir tpm-XXXXXXXX)"
+				ON_EXIT="rm -rf \"\$TEMP\" || :; $ON_EXIT"
+
+				download "https://github.com/$PACKAGE/raw/master/tpm-control" "$TEMP/tpm-control"
+				download "$REPO/$ARCH/$PACKAGE.tar.gz" "$TEMP/package.tar.gz"
+
+				"$0" install-package "$TEMP/tpm-control" "$TEMP/package.tar.gz"
+				;;
+		esac
+		;;
+
+	remove)
+		PACKAGE="$2"
+
+		[ "$(id -u)" != 0 ] && echo "${0##*/}: you are not root" >&2 && exit 1
+
+		if ! [ -e "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list" ]; then
+			echo "${0##*/}: $PACKAGE is not installed" >&2
+			exit 1
+		fi
+
+		cd /opt/tpm-store/var/lib/tpm/info
+
+		for I in */*.control; do
+			. "$I"
+
+			for J in $DEPENDS; do
+				[ "$J" = "$PACKAGE" ] && "$0" remove "${I%.control}"
+			done
+		done
+
+		TEMP="$(mktemp --directory --tmpdir tpm-XXXXXXXX)"
+		ON_EXIT="rm -rf \"\$TEMP\" || :; $ON_EXIT"
+
+		tac "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list" > "$TEMP/list"
+
+		echo "Removing $PACKAGE"
+
+		while IFS="" read -r FILE; do
+			if [ -d "$FILE" ]; then
+				rmdir "$FILE" 2> /dev/null || :
+			else
+				rm "$FILE" 2> /dev/null || :
+			fi
+		done < "$TEMP/list"
+
+		rm /opt/tpm-store/var/lib/tpm/info/"$PACKAGE".*
+		;;
+esac
+
+
+
+
+
+
+exit
+
+[end] usage
+[doc] bash, т. к. %q (не к tpm)
+[doc] howto: создай conf (проверять на непустоту поля)
+[end] read all prev versions, including aslife
+[doc] [done] deps build-deps
+[doc] [done] archs
+[doc] соответствие моих команд и команд apt/dpkg
+[doc] [done] split на разные пакеты (убрать из сд)
+[doc] [done] db
+[doc] вы должны установить PATH, в том числе у sudo
+[doc] не важно, если trap неправильно работает в target shell, речь идёт всего лишь об удалении временных файлов
+[end] ca-certs
+
+[sp]debian deps
+[sp]abstract deps, cmd:
+[sp]remove packs
+[sp]add tpm to tpm (tpm/Makefile написан, tpm/tpm-control написан)
+[sp]bootstrap tpm and de-bootstrap
+[sp]качать binary, если есть. если нет - собирать
+[sp]собрать всё для данной arch и залить
+[sp]собственно, установку debian-зависимостей нужных версий. для src и bin пакетов. возможно, с учётом мажорных версий либ
+[sp]придумать zip или tar или ещё что-то, чтоб без git'а
+[goal]replace dist.sh/aslife, binary bootstrap on gentoo, source bootstrap on gentoo (и на экзотических ос), libc problems
+[end] супертестирование на реальном дереве
+[end] read comments, chmod +x, comments перенести to readme
+[end] проверить все предположения о системе на: minimal debootstrap, d-i busybox, unixen, distros. во всех этих системах bootstrap'нуть tpm
+
+store created
+created saf.com/tpm
+/etc/profile changed, visudo changed
+
+
+
+
+
+
+
+
+
+
+
+
+
+-делаем-добавление-tpm-в-tpm-
+добавить поддержку prog[test]
+
+
+
+
+срочно написать support util для выяснения принадлежности пакетам
+
+
+эта программа не настраивает систему под меня, в отличие от aslife. её можно запускать in the wild. у меня очень непредвзятый софт
+
+
+этот набор программ всё же довольно высокого качества

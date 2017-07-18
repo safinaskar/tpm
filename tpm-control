@@ -1,0 +1,5 @@
+PACKAGE="safinaskar/tpm"
+DEPENDS="prog:mktemp:coreutils prog:wget:wget prog:id:coreutils prog:tar:tar prog:gzip:gzip prog:sed:sed prog:tac:coreutils"
+BUILD_DEPENDS="prog:make:make"
+ALL="make"
+INSTALL="make install"
