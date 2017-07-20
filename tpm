@@ -1,24 +1,95 @@
 #!/bin/sh
 
-set -e
+# Этот коммент имеет отношение ко всем скриптам tpm. Файлы и папки, созданные mktemp (и mktemp_directory) имеют странные права. Поэтому мы работаем не с ними непосредственно, а с файлами и папками внутри папок, созданных mktemp. Если создать с помощью mktemp папку, использовать её в качестве DESTDIR, затем запаковать в tar-архив, а затем распаковать в /, то / получит права drwx------, а это приведёт к неработоспособности sudo. Также я следил, чтобы не сделать случайно юзера владельцем /
+# На всех UNIX-подобных системах, которые были в моём распоряжении, был gzip. xz не было на OpenBSD 5.5 в той инсталяции, которую я сделал. Так что в качестве компрессора выбираем gzip
+# Этот коммент имеет отношение ко всем скриптам tpm. Считаю зависимость от mktemp нормальной, его обычно можно достать
+# Этот коммент имеет отношение ко всем скриптам tpm. Считаю плохой ситуацию, когда скрипт по необходимости вызывает sudo. Так что любая операция, которая может потребовать прав root, сразу запускается с правами root. Для tpm-upload делаем исключение, т. к. ему нужно залить на ssh с ключами пользователя
+# Некоторые части этого скрипта должны работать в ещё более жёстких условиях, чем те, которые гарантируются зависимостями tpm. Более того, в этих условиях не гарантируется наличие вообще никаких внутренних и внешних команд, кроме тех, которые проверены с помощью check_command в <metasmallenv></metasmallenv>. Такие места помечены <smallenv></smallenv>. Тег относится в том числе к функциям, объявленным внутри него. В каждом блоке <smallenv></smallenv> нужно проверять всё, что используешь, кроме явно проверенных в <metasmallenv></metasmallenv>
+# В скриптах tpm в единственном месте захардкодено нечто, имеющее отношение конкретно к моей инфраструктуре: в варианте case'а, который отвечает за bootstrap
 
-# Этот коммент имеет отношение ко всем скриптам tpm. Файлы и папки, созданные mktemp имеют странные права. Поэтому мы работаем не с ними непосредственно, а с файлами и папками внутри папок, созданных mktemp. Если создать с помощью mktemp папку, использовать её в качестве DESTDIR, затем запаковать в tar-архив, а затем распаковать в /, то / получит права drwx------, а это приведёт к неработоспособности sudo. Также я следил, чтобы не сделать случайно юзера владельцем /
-# Этот коммент имеет отношение ко всем скриптам tpm. Всегда удаляем $TEMP с помощью rm -rf, т. к. $TEMP может содержать git-репозиторий
-# На всех UNIX-подобных системах, которые были в моём распоряжении, был gzip. xz не было на OpenBSD 5.5. Так что в качестве компрессора выбираем gzip
-# Считаю зависимость от mktemp нормальной, его обычно можно достать
+# <metasmallenv>
+# Сначала предположим, что echo и exit у нас всё-таки есть
+
+check_command(){
+	if ! type "$1" > /dev/null 2>&1; then
+		echo "${0##*/}: $1: command not found" >&2
+		exit 1
+	fi
+}
+
+check_command type
+
+# Теперь у нас есть echo, exit и type. Но на всякий случай проверим echo и exit
+
+check_command echo
+check_command exit
+
+# Теперь проверим ещё несколько команд
+
+check_command :
+check_command set
+check_command [
+check_command return
+check_command break
+check_command printf
+check_command .
+check_command read
+# </metasmallenv>
+
+# <smallenv>
+check_command trap
+check_command eval
+
+set -e
 
 ON_EXIT=":"
 trap 'eval "$ON_EXIT"' EXIT
 
+if [ "${0#/}" = "$0" ]; then
+	ME="$PWD/$0"
+else
+	ME="$0"
+fi
+
+# </smallenv>
+
+# <smallenv>
+mktemp_directory(){
+	check_command mktemp
+	check_command rm
+	check_command mkdir
+
+	while :; do
+		RESULT="$(mktemp /tmp/tpm-XXXXXX)"
+		rm "$RESULT"
+		if mkdir -m 700 "$RESULT" 2> /dev/null; then
+			break
+		fi
+	done
+
+	printf '%s\n' "$RESULT"
+}
+# </smallenv>
+
+# <smallenv>
 download(){
+	check_command mktemp
+	check_command wget
+	check_command rm
+	check_command cat
+
 	printf '%s' "Downloading $1... "
 
-	WGET_OUTPUT="$(mktemp --tmpdir tpm-wget-output-XXXXXXXX)"
+	WGET_OUTPUT="$(mktemp /tmp/tpm-wget-output-XXXXXX)"
 
 	if ! wget -O "$2" "$1" 2> "$WGET_OUTPUT"; then
 		rm -f "$2" || :
-		printf 'failed\n' || :
-		cat "$WGET_OUTPUT" >&2 || :
+		if "$3"; then
+			printf 'failed\n' || :
+			cat "$WGET_OUTPUT" >&2 || :
+		else
+			printf 'failed, but this is OK\n' || :
+		fi
 		rm "$WGET_OUTPUT"
 		return 1
 	fi
@@ -26,6 +97,50 @@ download(){
 	rm "$WGET_OUTPUT"
 
 	printf 'done\n'
+}
+# </smallenv>
+
+my_source(){
+	if [ "${1#/}" = "$1" ]; then
+		. "$PWD/$1"
+	else
+		. "$1"
+	fi
+}
+
+install_debian_package(){
+	# <smallenv>
+	if ! type apt-get > /dev/null 2>&1; then
+		echo "${0##*/}: $1: package seems to be not present and we have no apt-get to install it" >&2
+		exit 1
+	fi
+
+	# Будем считать, что наличие файла /var/lib/apt/lists/lock говорит о том, что как минимум один раз был выполнен apt-get update
+	if ! [ -e /var/lib/apt/lists/lock ]; then
+		apt-get update
+	fi
+
+	# LC_ALL=C, т. к. если не установлены локали, то apt-get будет выдавать кучу сообщений об ошибках
+	# Нужно писать именно -o Apt::Install-Recommends=false, а не --no-install-recommends, т. к. apt из sarge не понимает --no-install-recommends
+	LC_ALL=C apt-get install -y -o Apt::Install-Recommends=false "$1"
+	# </smallenv>
+}
+
+install_program(){
+	# <smallenv>
+	PACKAGE_SUFFIX="${1#prog:}"
+	COMMAND="${PACKAGE_SUFFIX%%:*}"
+	DEBIAN_PACKAGE="${PACKAGE_SUFFIX#*:}"
+
+	type "$COMMAND" > /dev/null 2>&1 && return
+
+	install_debian_package "$DEBIAN_PACKAGE"
+
+	if ! type "$COMMAND" > /dev/null 2>&1; then
+		echo "${0##*/}: $1: пакет установлен, но команды всё равно нет" >&2
+		exit 1
+	fi
+	# </smallenv>
 }
 
 case "$1" in
@@ -35,20 +150,24 @@ case "$1" in
 
 		[ "$(id -u)" != 0 ] && echo "${0##*/}: you are not root" >&2 && exit 1
 
-		. "$CONTROL"
+		my_source "$CONTROL"
 
 		[ -e "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list" ] && echo "${0##*/}: $PACKAGE is already installed" >&2 && exit 1
 
 		for I in $DEPENDS; do
-			"$0" install "$I"
+			"$ME" install "$I"
+		done
+
+		for I in $LIBS; do
+			"$ME" install "lib:$I"
 		done
 
 		echo "Installing $PACKAGE"
 
 		mkdir -p "/opt/tpm-store/var/lib/tpm/info/${PACKAGE%/*}"
 
-		TEMP="$(mktemp --directory --tmpdir tpm-XXXXXXXX)"
-		ON_EXIT="rm -rf \"\$TEMP\" || :; $ON_EXIT"
+		TEMP="$(mktemp_directory)"
+		ON_EXIT="rm -r \"\$TEMP\" || :; $ON_EXIT"
 
 		( cd /; tar --numeric-owner -xzv ) < "$PACKAGE_FILE" > "$TEMP/list"
 
@@ -66,28 +185,59 @@ case "$1" in
 
 		case "$PACKAGE" in
 			prog:*)
-				PACKAGE_SUFFIX="${PACKAGE#prog:}"
-				COMMAND="${PACKAGE_SUFFIX%%:*}"
-				DEBIAN_PACKAGE="${PACKAGE_SUFFIX#*:}"
+				install_program "$PACKAGE"
+				;;
 
-				type "$COMMAND" > /dev/null 2>&1 && exit
+			lib:*)
+				PACKAGE_SUFFIX="${PACKAGE#lib:}"
+				LIBRARY="${PACKAGE_SUFFIX%%:*}"
+				VERSION="${PACKAGE_SUFFIX#*:}"
 
-				if ! type apt-get > /dev/null 2>&1; then
-					echo "${0##*/}: cannot install $PACKAGE: command not found and no apt-get" >&2
+				. "${ME%/*}/../etc/tpm.conf"
+
+				check_library(){
+					for I in "/lib/$LIBRARY.so.$VERSION" "/usr/lib/$LIBRARY.so.$VERSION" "/lib/$SYSTEM_ARCH/$LIBRARY.so.$VERSION" "/usr/lib/$SYSTEM_ARCH/$LIBRARY.so.$VERSION"; do
+						if [ -e "$I" ]; then
+							return 0
+						fi
+					done
+
+					return 1
+				}
+
+				check_library && exit
+
+				install_debian_package "$LIBRARY$VERSION"
+
+				if ! check_library; then
+					echo "${0##*/}: $PACKAGE: пакет установлен, но библиотеки всё равно нет" >&2
 					exit 1
 				fi
+				;;
 
-				# Будем считать, что наличие файла /var/lib/apt/lists/lock говорит о том, что как минимум один раз был выполнен apt-get update
-				if ! [ -e /var/lib/apt/lists/lock ]; then
-					apt-get update
-				fi
+			libdev:*)
+				PACKAGE_SUFFIX="${PACKAGE#libdev:}"
+				LIBRARY="${PACKAGE_SUFFIX%%:*}"
+				VERSION="${PACKAGE_SUFFIX#*:}"
 
-				# LC_ALL=C, т. к. если не установлены локали, то apt-get будет выдавать кучу сообщений об ошибках
-				# Нужно писать именно -o Apt::Install-Recommends=false, а не --no-install-recommends, т. к. apt из sarge не понимает --no-install-recommends
-				LC_ALL=C apt-get install -y -o Apt::Install-Recommends=false "$DEBIAN_PACKAGE"
+				. "${ME%/*}/../etc/tpm.conf"
 
-				if ! type "$COMMAND" > /dev/null 2>&1; then
-					echo "${0##*/}: $PACKAGE: пакет установлен, но команды всё равно нет" >&2
+				check_library(){
+					for I in "/lib/$LIBRARY.so" "/usr/lib/$LIBRARY.so" "/lib/$SYSTEM_ARCH/$LIBRARY.so" "/usr/lib/$SYSTEM_ARCH/$LIBRARY.so"; do
+						if [ -e "$I" ]; then
+							return 0
+						fi
+					done
+
+					return 1
+				}
+
+				check_library && exit
+
+				install_debian_package "$LIBRARY$VERSION-dev"
+
+				if ! check_library; then
+					echo "${0##*/}: $PACKAGE: пакет установлен, но библиотеки всё равно нет" >&2
 					exit 1
 				fi
 				;;
@@ -95,15 +245,32 @@ case "$1" in
 			*)
 				[ -e "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list" ] && exit
 
-				. "${0%/*}/../etc/tpm.conf"
+				. "${ME%/*}/../etc/tpm.conf"
 
-				TEMP="$(mktemp --directory --tmpdir tpm-XXXXXXXX)"
-				ON_EXIT="rm -rf \"\$TEMP\" || :; $ON_EXIT"
+				TEMP="$(mktemp_directory)"
+				ON_EXIT="rm -r \"\$TEMP\" || :; $ON_EXIT"
 
-				download "https://github.com/$PACKAGE/raw/master/tpm-control" "$TEMP/tpm-control"
-				download "$REPO/$ARCH/$PACKAGE.tar.gz" "$TEMP/package.tar.gz"
+				if download "$REPO/$SYSTEM_ARCH/$PACKAGE.tar.gz" "$TEMP/package.tar.gz" false; then
+					download "https://github.com/$PACKAGE/raw/master/tpm-control" "$TEMP/tpm-control" true
 
-				"$0" install-package "$TEMP/tpm-control" "$TEMP/package.tar.gz"
+					"$ME" install-package "$TEMP/tpm-control" "$TEMP/package.tar.gz"
+				elif download "$REPO/all/$PACKAGE.tar.gz" "$TEMP/package.tar.gz" false; then
+					download "https://github.com/$PACKAGE/raw/master/tpm-control" "$TEMP/tpm-control" true
+
+					"$ME" install-package "$TEMP/tpm-control" "$TEMP/package.tar.gz"
+				else
+					download "https://github.com/$PACKAGE/archive/master.tar.gz" "$TEMP/master.tar.gz" true
+
+					cd "$TEMP"
+
+					tar -xzf "$TEMP/master.tar.gz"
+
+					cd "${PACKAGE##*/}-master"
+
+					"$ME" build -o "$TEMP/package.tar.gz"
+
+					"$ME" install-package tpm-control "$TEMP/package.tar.gz"
+				fi
 				;;
 		esac
 		;;
@@ -121,15 +288,15 @@ case "$1" in
 		cd /opt/tpm-store/var/lib/tpm/info
 
 		for I in */*.control; do
-			. "$I"
+			my_source "$I"
 
 			for J in $DEPENDS; do
-				[ "$J" = "$PACKAGE" ] && "$0" remove "${I%.control}"
+				[ "$J" = "$PACKAGE" ] && "$ME" remove "${I%.control}"
 			done
 		done
 
-		TEMP="$(mktemp --directory --tmpdir tpm-XXXXXXXX)"
-		ON_EXIT="rm -rf \"\$TEMP\" || :; $ON_EXIT"
+		TEMP="$(mktemp_directory)"
+		ON_EXIT="rm -r \"\$TEMP\" || :; $ON_EXIT"
 
 		tac "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list" > "$TEMP/list"
 
@@ -145,6 +312,130 @@ case "$1" in
 
 		rm /opt/tpm-store/var/lib/tpm/info/"$PACKAGE".*
 		;;
+
+	list)
+		if ! [ -e /opt/tpm-store/var/lib/tpm/info ]; then
+			exit
+		fi
+
+		cd /opt/tpm-store/var/lib/tpm/info
+
+		for I in */*.list; do
+			if ! [ -e "$I" ]; then
+				exit
+			fi
+
+			printf '%s\n' "${I%.list}"
+		done
+		;;
+
+	build)
+		# $2 is -o
+		OUTPUT="$3"
+
+		[ "$(id -u)" != 0 ] && echo "${0##*/}: you are not root" >&2 && exit 1
+
+		my_source tpm-control
+
+		for I in $DEPENDS $BUILD_DEPENDS; do
+			"$ME" install "$I"
+		done
+
+		for I in $LIBS; do
+			"$ME" install "libdev:$I"
+		done
+
+		TEMP="$(mktemp_directory)"
+		ON_EXIT="rm -r \"\$TEMP\" || :; $ON_EXIT"
+
+		export PREFIX="/opt/tpm-store"
+		export DESTDIR="$TEMP/destdir"
+
+		sh -c "$INSTALL"
+
+		( cd "$DESTDIR"; tar --numeric-owner -cz . ) > "$OUTPUT"
+		;;
+
+	bootstrap)
+		# <smallenv>
+		# Здесь мы не можем делать предположение, что мы - файл. Значит, мы не можем перезапускать себя с помощью "$ME"
+		# Список DEPENDS у tpm должен быть синхронизирован с bootstrap. И вообще вся функциональность tpm должна быть синхронизирована с bootstrap
+
+		check_command id
+
+		[ "$(id -u)" != 0 ] && echo "${0##*/}: you are not root" >&2 && exit 1
+
+		check_command rm
+		check_command sh
+		check_command mkdir
+		check_command cat
+		check_command chmod
+
+		####
+
+		install_program prog:wget:wget
+
+		if ! wget -O /dev/null https://github.com 2> /dev/null; then
+			if ! type apt-get > /dev/null 2>&1; then
+				wget -O /dev/null https://github.com
+				echo "${0##*/}: test download https://github.com failed, possible reason: no certificates on the system, and we don't have apt-get, so cannot install them" >&2
+				exit 1
+			fi
+
+			install_debian_package ca-certificates
+
+			if ! wget -O /dev/null https://github.com 2> /dev/null; then
+				wget -O /dev/null https://github.com
+				echo "${0##*/}: we installed ca-certificates, but test download https://github.com still fails, possible reasons: no internet connection, DNS problems, https://github.com is down" >&2
+				exit 1
+			fi
+		fi
+
+		####
+
+		if ! { [ -e /opt/tpm-store/etc/tpm.conf ] && . /opt/tpm-store/etc/tpm.conf && [ -n "$SYSTEM_ARCH" ]; }; then
+			TEMP="$(mktemp_directory)"
+			ON_EXIT="rm -r \"\$TEMP\" || :; $ON_EXIT"
+
+			if ! type cc > /dev/null 2>&1; then
+				echo "${0##*/}: warning: config not found and no cc, trying config.guess" >&2
+
+				download "http://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess;hb=HEAD" "$TEMP/config.guess" true
+				sh "$TEMP/config.guess" > "$TEMP/arch"
+
+				echo "${0##*/}: config.guess guessed this arch: $(cat "$TEMP/arch"), if this is true, write this to config and re-run this bootstrap script" >&2
+				exit 1
+			fi
+
+			cc -v 2> "$TEMP/cc"
+
+			while read -r LINE; do
+				case "$LINE" in
+					"Target: "*)
+						SYSTEM_ARCH="${LINE#Target: }"
+						;;
+				esac
+			done < "$TEMP/cc"
+		fi
+
+		mkdir -p /opt/tpm-store/etc
+
+		cat << EOF > /opt/tpm-store/etc/tpm.conf
+SYSTEM_ARCH="$SYSTEM_ARCH"
+REPO="http://safinaskar.com/tpm"
+EOF
+
+		####
+
+		mkdir -p /opt/tpm-store/bin
+		download "https://github.com/safinaskar/tpm/raw/master/tpm" /opt/tpm-store/bin/tpm true
+		chmod +x /opt/tpm-store/bin/tpm
+
+		####
+
+		/opt/tpm-store/bin/tpm install safinaskar/tpm
+		# </smallenv>
+		;;
 esac
 
 
@@ -158,28 +449,30 @@ exit
 [doc] bash, т. к. %q (не к tpm)
 [doc] howto: создай conf (проверять на непустоту поля)
 [end] read all prev versions, including aslife
-[doc] [done] deps build-deps
+[doc] [done] deps build-deps prog:
 [doc] [done] archs
 [doc] соответствие моих команд и команд apt/dpkg
 [doc] [done] split на разные пакеты (убрать из сд)
 [doc] [done] db
 [doc] вы должны установить PATH, в том числе у sudo
 [doc] не важно, если trap неправильно работает в target shell, речь идёт всего лишь об удалении временных файлов
-[end] ca-certs
+[doc] прочитать сорцы и написать доки
+[doc] libc problem никак не решена
+[doc] $INSTALL должен ещё и собирать. но рекомендуется собирать заранее (чтоб не от рута собирать, а то как потом make clean от юзера будешь делать, да и вообще собирать от юзера рекомендуется). но при этом нужно, чтобы на этапе $INSTALL tpm мог установить свой $DESTDIR
+[doc] решил сделать bootstrap-скрипт частью основного. так проще. в таком случае bootstrap имеет доступ к функциям основного скрипта, и это хорошо. да запускать немного сложнее, нужно передавать аргумент
+[end] тест бубунта
 
-[sp]debian deps
-[sp]abstract deps, cmd:
-[sp]remove packs
-[sp]add tpm to tpm (tpm/Makefile написан, tpm/tpm-control написан)
+-[sp]abstract deps, cmd:
+[end]add tpm to tpm (tpm/Makefile написан, tpm/tpm-control написан)
 [sp]bootstrap tpm and de-bootstrap
-[sp]качать binary, если есть. если нет - собирать
 [sp]собрать всё для данной arch и залить
 [sp]собственно, установку debian-зависимостей нужных версий. для src и bin пакетов. возможно, с учётом мажорных версий либ
-[sp]придумать zip или tar или ещё что-то, чтоб без git'а
+[sp]arch all должен поддерживаться для установки скриптов на любой arch, в т ч сам tpm, без всяких git/make
 [goal]replace dist.sh/aslife, binary bootstrap on gentoo, source bootstrap on gentoo (и на экзотических ос), libc problems
 [end] супертестирование на реальном дереве
-[end] read comments, chmod +x, comments перенести to readme
-[end] проверить все предположения о системе на: minimal debootstrap, d-i busybox, unixen, distros. во всех этих системах bootstrap'нуть tpm
+[end] read comments, chmod +x, comments перенести to readme, поверхностно осмотреть проект
+[end] проверить все предположения о системе на: minimal debootstrap, d-i busybox, unixen, distros, android, old debian. во всех этих системах bootstrap'нуть tpm
+для bootstrap'инга на левой arch нужен arch=any/all?
 
 store created
 created saf.com/tpm
@@ -197,9 +490,6 @@ created saf.com/tpm
 
 
 
--делаем-добавление-tpm-в-tpm-
-добавить поддержку prog[test]
-
 
 
 
@@ -210,3 +500,40 @@ created saf.com/tpm
 
 
 этот набор программ всё же довольно высокого качества
+
+
+
+
+
+
+
+
+tpm-hello идеален
+
+
+проверить в "bootstrap", что tpm ещё не установлен, в debootstrap - что tpm есть
+
+
+[next] перевести tpm на cmake либо сразу на null build. как вообще правильно собирать проги на си?
+
+[next] протестить bootstrap на any/all
+
+logs
+
+
+
+
+
+
+
+
+
+
+
+
+tpm 2.0. по-хорошему нужен shell feature test, всех команд и их опций. сделать менеджер пакетов для sh. мол, этот пакет зависит от наличия такой-то команды в sh с такими-то опциями. нужен очень большой и сложный bootstrap, мои заменитили для отсутствующих утилит и так далее. нужен один и тот же менеджер пакетов, написанный на sh и си. sh - для не-linux окружений без компилятора (ну мало ли, где такая штука возникла). си - для всего остального. нужно разобраться, в каких окружениях какие команды и с какими опциями есть. нужно будет подумать о целях, которые я ставлю для tpm 2.0. нужна ли работоспособность без интернета? нужна ли работоспособность внутри минимального debootstrap'а или нет, т. к. в случае чего можно доустановить программы наружним dpkg?
+
+
+
+
+всё равно циркуляр dependency: bootstrap'у нужен работающий safinaskar.com, а ему - upload
