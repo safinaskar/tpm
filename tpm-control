@@ -1,6 +1,6 @@
-PACKAGE="safinaskar/tpm"
-ARCH="all"
-DEPENDS="prog:mktemp:coreutils prog:wget:wget prog:tar:tar prog:gzip:gzip prog:sed:sed prog:tac:coreutils"
-BUILD_DEPENDS="prog:make:make"
-LIBS=""
-INSTALL="make install"
+PACKAGE='safinaskar/tpm'
+ARCH='all'
+DEPENDS='prog:mktemp:coreutils prog:wget:wget prog:tar:tar prog:gzip:gzip prog:sed:sed prog:tac:coreutils'
+BUILD_DEPENDS='prog:cmake:cmake prog:make:make'
+LIBS=''
+INSTALL='cmake -DCMAKE_INSTALL_PREFIX="$PREFIX" . > /dev/null && make && make install DESTDIR="$DESTDIR" > /dev/null'
