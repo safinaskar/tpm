@@ -34,6 +34,7 @@ check_command break
 check_command printf
 check_command .
 check_command read
+check_command cd
 # </metasmallenv>
 
 # <smallenv>
@@ -50,7 +51,6 @@ if [ "${0#/}" = "$0" ]; then
 else
 	ME="$0"
 fi
-
 # </smallenv>
 
 # <smallenv>
@@ -100,6 +100,7 @@ download(){
 }
 # </smallenv>
 
+# <smallenv>
 my_source(){
 	if [ "${1#/}" = "$1" ]; then
 		. "$PWD/$1"
@@ -107,6 +108,7 @@ my_source(){
 		. "$1"
 	fi
 }
+# </smallenv>
 
 install_debian_package(){
 	# <smallenv>
@@ -145,6 +147,11 @@ install_program(){
 
 case "$1" in
 	install-package)
+		# <smallenv>
+		check_command id
+		check_command mkdir
+		check_command rm
+
 		CONTROL="$2"
 		PACKAGE_FILE="$3"
 
@@ -169,6 +176,11 @@ case "$1" in
 		TEMP="$(mktemp_directory)"
 		ON_EXIT="rm -r \"\$TEMP\" || :; $ON_EXIT"
 
+		check_command tar
+		check_command gzip
+		check_command sed
+		check_command cat
+
 		( cd /; tar --numeric-owner -xzv ) < "$PACKAGE_FILE" > "$TEMP/list"
 
 		sed 's/^\.//' "$TEMP/list" > "$TEMP/list2"
@@ -176,16 +188,36 @@ case "$1" in
 
 		# Делаем cat'ом, чтобы файл создался с нужными правами и владельцем
 		cat "$CONTROL" > "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.control"
+
+		if type ldd > /dev/null 2>&1; then
+			while IFS="" read -r FILE; do
+				ldd "$FILE" > /dev/null 2> "$TEMP/ldd-error" || :
+
+				if [ -s "$TEMP/ldd-error" ]; then
+					cat "$TEMP/ldd-error"
+					echo "${0##*/}: link errors, removing package back" >&2
+					"$ME" remove "$PACKAGE"
+					exit 1
+				fi
+			done < "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list"
+		fi
+		# </smallenv>
 		;;
 
 	install)
+		# <smallenv>
+		check_command id
+
 		PACKAGE="$2"
 
 		[ "$(id -u)" != 0 ] && echo "${0##*/}: you are not root" >&2 && exit 1
+		# </smallenv>
 
 		case "$PACKAGE" in
 			prog:*)
+				# <smallenv>
 				install_program "$PACKAGE"
+				# </smallenv>
 				;;
 
 			lib:*)
@@ -243,6 +275,9 @@ case "$1" in
 				;;
 
 			*)
+				# <smallenv>
+				check_command rm
+
 				[ -e "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list" ] && exit
 
 				. "${ME%/*}/../etc/tpm.conf"
@@ -259,6 +294,7 @@ case "$1" in
 
 					"$ME" install-package "$TEMP/tpm-control" "$TEMP/package.tar.gz"
 				else
+					# </smallenv>
 					download "https://github.com/$PACKAGE/archive/master.tar.gz" "$TEMP/master.tar.gz" true
 
 					cd "$TEMP"
@@ -270,7 +306,9 @@ case "$1" in
 					"$ME" build -o "$TEMP/package.tar.gz"
 
 					"$ME" install-package tpm-control "$TEMP/package.tar.gz"
+					# <smallenv>
 				fi
+				# </smallenv>
 				;;
 		esac
 		;;
@@ -360,6 +398,7 @@ case "$1" in
 		# <smallenv>
 		# Здесь мы не можем делать предположение, что мы - файл. Значит, мы не можем перезапускать себя с помощью "$ME"
 		# Список DEPENDS у tpm должен быть синхронизирован с bootstrap. И вообще вся функциональность tpm должна быть синхронизирована с bootstrap
+		# В bootstrap'е предполагаем, что бинарная версия пакета tpm выложена на репу
 
 		check_command id
 
@@ -370,6 +409,8 @@ case "$1" in
 		check_command mkdir
 		check_command cat
 		check_command chmod
+
+		[ -e /opt/tpm-store/var/lib/tpm ] && echo "${0##*/}: tpm data base already exists" >&2 && exit 1
 
 		####
 
@@ -456,24 +497,21 @@ exit
 [doc] [done] db
 [doc] [done] есть bootstrap
 [doc] [done] есть arch all/any
+[doc] [done] проблема libc всё же решена
 [doc] вы должны установить PATH, в том числе у sudo
 [doc] не важно, если trap неправильно работает в target shell, речь идёт всего лишь об удалении временных файлов
 [doc] прочитать сорцы и написать доки
-[doc] libc problem никак не решена
 [doc] $INSTALL должен ещё и собирать. но рекомендуется собирать заранее (чтоб не от рута собирать, а то как потом make clean от юзера будешь делать, да и вообще собирать от юзера рекомендуется). но при этом нужно, чтобы на этапе $INSTALL tpm мог установить свой $DESTDIR
 [doc] решил сделать bootstrap-скрипт частью основного. так проще. в таком случае bootstrap имеет доступ к функциям основного скрипта, и это хорошо. да запускать немного сложнее, нужно передавать аргумент
 [end] тест бубунта
+[end] удаляй с помощью rm -r /opt/tpm-store
+[doc] prog: зависит от бинаря в системе (при этом проверяется тупо)
 
--[sp]abstract deps, cmd:
-[end]add tpm to tpm (tpm/Makefile написан, tpm/tpm-control написан)
-[sp]bootstrap tpm and de-bootstrap
-[sp]собрать всё для данной arch и залить
-[sp]собственно, установку debian-зависимостей нужных версий. для src и bin пакетов. возможно, с учётом мажорных версий либ
-[goal]replace dist.sh/aslife, binary bootstrap on gentoo, source bootstrap on gentoo (и на экзотических ос), libc problems
-[end] супертестирование на реальном дереве
+>>>[end]add tpm to tpm (tpm/Makefile написан, tpm/tpm-control написан)
+[goal]replace dist.sh/aslife, binary bootstrap on gentoo, source bootstrap on gentoo (и на экзотических ос)
+[end] супертестирование на реальном дереве. тест ldd. тест cc -v. тест config.guess
 [end] read comments, chmod +x, comments перенести to readme, поверхностно осмотреть проект
 [end] проверить все предположения о системе на: minimal debootstrap, d-i busybox, unixen, distros, android, old debian. во всех этих системах bootstrap'нуть tpm
-для bootstrap'инга на левой arch нужен arch=any/all?
 
 store created
 created saf.com/tpm
@@ -494,30 +532,13 @@ created saf.com/tpm
 
 
 
-срочно написать support util для выяснения принадлежности пакетам
+[end] срочно написать support util для выяснения принадлежности пакетам
 
 
-эта программа не настраивает систему под меня, в отличие от aslife. её можно запускать in the wild. у меня очень непредвзятый софт
+[doc] эта программа не настраивает систему под меня, в отличие от aslife. её можно запускать in the wild. у меня очень непредвзятый софт
 
 
-этот набор программ всё же довольно высокого качества
-
-
-
-
-
-
-
-
-tpm-hello идеален
-
-
-проверить в "bootstrap", что tpm ещё не установлен, в debootstrap - что tpm есть
-
-
-[next] перевести tpm на cmake либо сразу на null build. как вообще правильно собирать проги на си?
-
-logs
+[doc] этот набор программ всё же довольно высокого качества
 
 
 
@@ -526,8 +547,6 @@ logs
 
 
 
-
-
-
-
-tpm 2.0. по-хорошему нужен shell feature test, всех команд и их опций. сделать менеджер пакетов для sh. мол, этот пакет зависит от наличия такой-то команды в sh с такими-то опциями. нужен очень большой и сложный bootstrap, мои заменитили для отсутствующих утилит и так далее. нужен один и тот же менеджер пакетов, написанный на sh и си. sh - для не-linux окружений без компилятора (ну мало ли, где такая штука возникла). си - для всего остального. нужно разобраться, в каких окружениях какие команды и с какими опциями есть. нужно будет подумать о целях, которые я ставлю для tpm 2.0. нужна ли работоспособность без интернета? нужна ли работоспособность внутри минимального debootstrap'а или нет, т. к. в случае чего можно доустановить программы наружним dpkg? tpm 2.0. конфиг с большой буквы, чтоб его было видно. и чтоб шёл раньше CMakeLists.txt и прочих
+[doc] tpm-hello идеален
+[doc] tpm 2.0. по-хорошему нужен shell feature test, всех команд и их опций. сделать менеджер пакетов для sh. мол, этот пакет зависит от наличия такой-то команды в sh с такими-то опциями. нужен очень большой и сложный bootstrap, мои заменитили для отсутствующих утилит и так далее. нужен один и тот же менеджер пакетов, написанный на sh и си. sh - для не-linux окружений без компилятора (ну мало ли, где такая штука возникла). си - для всего остального. нужно разобраться, в каких окружениях какие команды и с какими опциями есть. нужно будет подумать о целях, которые я ставлю для tpm 2.0. нужна ли работоспособность без интернета? нужна ли работоспособность внутри минимального debootstrap'а или нет, т. к. в случае чего можно доустановить программы наружним dpkg? tpm 2.0. конфиг с большой буквы, чтоб его было видно. и чтоб шёл раньше CMakeLists.txt и прочих. можно пойти дальше в разделении tpm: сделать маленькую версию, которая не умеет удалять, а потому не требует tac и так далее
+[end] showmegnulinux
