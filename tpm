@@ -266,7 +266,7 @@ case "$1" in
 					DEBIAN_PACKAGE="${PACKAGE_SUFFIX#*:}"
 				fi
 
-				install_debian_package prog:cc:gcc
+				"$ME" install prog:cc:gcc
 
 				check_library(){
 					if echo 'int main(void){}' | cc -o /dev/null -l"${LIBRARY}" -x c - 2> /dev/null; then
