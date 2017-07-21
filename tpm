@@ -31,6 +31,7 @@ check_command set
 check_command [
 check_command return
 check_command break
+check_command continue
 check_command printf
 check_command .
 check_command read
@@ -499,6 +500,28 @@ EOF
 		# Во-первых, предыдущий $ME удалён, поэтому мы правильно сделали, что сохранили его в $TEMP/me. Но у меня ещё есть подозрение, что при создании нового $ME будет запись в иноду, которую интерпретатор держит открытым файловым дескриптором. Поэтому весь скрипт должен быть ещё заключён в фигурные скобки
 		"$ME" install safinaskar/tpm
 		;;
+
+	remove-all)
+		[ "$(id -u)" != 0 ] && echo "${0##*/}: you are not root" >&2 && exit 1
+
+		if ! [ -e /opt/tpm-store/var/lib/tpm/info ]; then
+			exit
+		fi
+
+		cd /opt/tpm-store/var/lib/tpm/info
+
+		for I in */*.list; do
+			if ! [ -e "$I" ]; then
+				exit
+			fi
+
+			if [ "${I%.list}" != safinaskar/tpm ]; then
+				"$ME" remove "${I%.list}"
+			fi
+		done
+
+		"$ME" upgrade-tpm
+		;;
 esac
 
 exit
@@ -522,6 +545,7 @@ exit
 [doc] [done] есть bootstrap
 [doc] [done] есть arch all/any
 [doc] [done] проблема libc всё же решена
+[doc] (повтор) описать все сорцы
 [doc] вы должны установить PATH, в том числе у sudo
 [doc] не важно, если trap неправильно работает в target shell, речь идёт всего лишь об удалении временных файлов
 [doc] прочитать сорцы и написать доки
@@ -547,12 +571,6 @@ exit
 [doc] install all instructions to после установки ос
 
 
-
-
-upgrade everything
-
-
-upgrade-tpm test doc
 
 
 
