@@ -266,16 +266,14 @@ case "$1" in
 					DEBIAN_PACKAGE="${PACKAGE_SUFFIX#*:}"
 				fi
 
-				. "${ME%/*}/../etc/tpm.conf"
+				install_debian_package prog:cc:gcc
 
 				check_library(){
-					for I in "/lib/$LIBRARY.so" "/usr/lib/$LIBRARY.so" "/lib/$SYSTEM_ARCH/$LIBRARY.so" "/usr/lib/$SYSTEM_ARCH/$LIBRARY.so"; do
-						if [ -e "$I" ]; then
-							return 0
-						fi
-					done
-
-					return 1
+					if echo 'int main(void){}' | cc -o /dev/null -l"${LIBRARY}" -x c - 2> /dev/null; then
+						return 0
+					else
+						return 1
+					fi
 				}
 
 				check_library && exit

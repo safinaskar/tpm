@@ -3,4 +3,6 @@ ARCH='all'
 DEPENDS='prog:mktemp:coreutils prog:wget:wget prog:tar:tar prog:gzip:gzip prog:sed:sed prog:tac:coreutils'
 BUILD_DEPENDS='prog:cmake:cmake prog:make:make'
 LIBS=''
-INSTALL='mkdir tpm-build && cd tpm-build && cmake -DCMAKE_INSTALL_PREFIX="$PREFIX" .. && make install && cd .. && rm -r tpm-build'
+INSTALL='[ -e CMakeCache.txt ] && echo "Failed: CMakeCache.txt" && exit 1;'\
+
+'rm -rf tpm-build && mkdir tpm-build && cd tpm-build && cmake -DCMAKE_INSTALL_PREFIX="$PREFIX" .. && make install && cd ..; rm -rf tpm-build'
