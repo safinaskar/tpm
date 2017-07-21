@@ -229,7 +229,8 @@ case "$1" in
 			lib:*)
 				PACKAGE_SUFFIX="${PACKAGE#lib:}"
 				LIBRARY="${PACKAGE_SUFFIX%%:*}"
-				VERSION="${PACKAGE_SUFFIX#*:}"
+				PACKAGE_SUFFIX="${PACKAGE_SUFFIX#*:}"
+				VERSION="${PACKAGE_SUFFIX%%:*}"
 
 				. "${ME%/*}/../etc/tpm.conf"
 
@@ -256,7 +257,14 @@ case "$1" in
 			libdev:*)
 				PACKAGE_SUFFIX="${PACKAGE#libdev:}"
 				LIBRARY="${PACKAGE_SUFFIX%%:*}"
-				VERSION="${PACKAGE_SUFFIX#*:}"
+				PACKAGE_SUFFIX="${PACKAGE_SUFFIX#*:}"
+				VERSION="${PACKAGE_SUFFIX%%:*}"
+
+				if [ "$VERSION" = "$PACKAGE_SUFFIX" ]; then
+					DEBIAN_PACKAGE="$LIBRARY$VERSION-dev"
+				else
+					DEBIAN_PACKAGE="${PACKAGE_SUFFIX#*:}"
+				fi
 
 				. "${ME%/*}/../etc/tpm.conf"
 
@@ -272,7 +280,7 @@ case "$1" in
 
 				check_library && exit
 
-				install_debian_package "$LIBRARY$VERSION-dev"
+				install_debian_package "$DEBIAN_PACKAGE"
 
 				if ! check_library; then
 					echo "${0##*/}: $PACKAGE: пакет установлен, но библиотеки всё равно нет" >&2
@@ -312,7 +320,7 @@ case "$1" in
 					"$ME" build -o "$TEMP/package.tar.gz"
 
 					"$ME" install-package tpm-control "$TEMP/package.tar.gz"
-					# <smallenv>
+					# <smallenv> (sic!)
 				fi
 				# </smallenv>
 				;;
@@ -567,11 +575,8 @@ exit
 
 
 
-
-
-
-
-
+нужна build'ing farm в данном chroot environment'е
+написать для будущих поколений процесс бутстрапинга (в том числе про то, что tpm-upload требует конфига, а потому должен быть установлен в определённое место)
 
 
 [end] срочно написать support util для выяснения принадлежности пакетам
@@ -586,10 +591,6 @@ exit
 
 
 
-
-
-
-[doc] tpm-hello добавлен. закончен. идеален
 [doc] tpm добавлен. не закончен лишь открытый файл tpm
 [doc] tpm-upload добавлен. не закончен лишь открытый файл tpm-upload
 [doc] tpm 2.0. по-хорошему нужен shell feature test, всех команд и их опций. сделать менеджер пакетов для sh. мол, этот пакет зависит от наличия такой-то команды в sh с такими-то опциями. нужен очень большой и сложный bootstrap, мои заменитили для отсутствующих утилит и так далее. нужен один и тот же менеджер пакетов, написанный на sh и си. sh - для не-linux окружений без компилятора (ну мало ли, где такая штука возникла). си - для всего остального. нужно разобраться, в каких окружениях какие команды и с какими опциями есть. нужно будет подумать о целях, которые я ставлю для tpm 2.0. нужна ли работоспособность без интернета? нужна ли работоспособность внутри минимального debootstrap'а или нет, т. к. в случае чего можно доустановить программы наружним dpkg? tpm 2.0. конфиг с большой буквы, чтоб его было видно. и чтоб шёл раньше CMakeLists.txt и прочих. можно пойти дальше в разделении tpm: сделать маленькую версию, которая не умеет удалять, а потому не требует tac и так далее. по-хорошему в каждой точке кода мы должны знать, каковы наши предположения (что мы не выполняемся в контексте curl | sh, что мы выполняемся там же, где находится установленный скрипт, что во время удаления себя скрипт не захочет зачем-то напоследок перезапустить себя и так далее и тому подобное). нужны strong exception safety гарантии, но для этого нужен другой язык, а не sh
