@@ -269,7 +269,7 @@ case "$1" in
 				"$ME" install prog:cc:gcc
 
 				check_library(){
-					if echo 'int main(void){}' | cc -o /dev/null -l"${LIBRARY}" -x c - 2> /dev/null; then
+					if echo 'int main(void){}' | cc -o /dev/null -l"${LIBRARY#lib}" -x c - 2> /dev/null; then
 						return 0
 					else
 						return 1
