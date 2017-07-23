@@ -136,10 +136,25 @@ _target_install_debian_package(){
 	LC_ALL=C chroot "$TARGET" apt-get install -y -o Apt::Install-Recommends=false "$PACKAGE"
 }
 
-_force_command(){
-	COMMAND="$(tpm-anz "$1")"
-	PACKAGE="$(tpm-anz "$2")"
-	tpm-az "$3"
+_target_install_prog_colon(){
+	COMMAND="$(tpm_anz "$1")"
+	PACKAGE="$(tpm_anz "$2")"
+	tpm_az "$3"
+
+	_is_target_command "$COMMAND" && return
+
+	_target_install_debian_package "$PACKAGE"
+
+	if ! _is_target_command "$COMMAND"; then
+		echo "${0##*/}: мы только что установили debian-пакет $PACKAGE установлен, но команды $COMMAND всё равно нет" >&2
+		exit 1
+	fi
+}
+
+_force_prog_colon(){
+	COMMAND="$(tpm_anz "$1")"
+	PACKAGE="$(tpm_anz "$2")"
+	tpm_az "$3"
 
 	if ! tpm_is_command "$COMMAND"; then
 		if [ "$TARGET" != / ]; then
@@ -147,45 +162,53 @@ _force_command(){
 			exit 1
 		fi
 
-		_target_install_debian_package "$PACKAGE"
-
-		! tpm_is_command "$COMMAND" && echo "${0##*/}: we just installed $COMMAND, but still cannot run it" >&2 && exit 1
+		_target_install_prog_colon "$COMMAND" "$PACKAGE"
 	fi
 }
 
 tpm_is_wget_working(){
-	tpm-az "$1"
+	tpm_az "$1"
 
 	wget -O /dev/null https://github.com 2> /dev/null
 }
 
-_force_wget_working(){
-	tpm-az "$1"
+_target_install_meta_wget(){
+	tpm_az "$1"
 
-	_force_command wget wget
+	_target_install_prog_colon wget wget
 
-	if ! tpm_is_wget_working; then
+	chroot "$TARGET" wget -O /dev/null https://github.com 2> /dev/null && return
+
+	_target_install_debian_package ca-certificates
+
+	if ! chroot "$TARGET" wget -O /dev/null https://github.com; then
+		echo "${0##*/}: we just installed ca-certificates, but still cannot download https://github.com, possible reasons: no internet connection, DNS problems, https://github.com is down" >&2
+		exit 1
+	fi
+}
+
+_force_meta_wget(){
+	tpm_az "$1"
+
+	_force_prog_colon wget wget
+
+	if ! wget -O /dev/null https://github.com 2> /dev/null; then
 		if [ "$TARGET" != / ]; then
 			wget -O /dev/null https://github.com
 			echo "${0##*/}: cannot download https://github.com, possible reason: no certificates on the system, and target is not /, so we will not install the certificates" >&2
 			exit 1
 		fi
 
-		_target_install_debian_package ca-certificates
-
-		if ! wget -O /dev/null https://github.com; then
-			echo "${0##*/}: we just installed ca-certificates, but still cannot download https://github.com, possible reasons: no internet connection, DNS problems, https://github.com is down" >&2
-			exit 1
-		fi
+		_target_install_meta_wget
 	fi
 }
 
 # Исключение из правила: должно работать корректно даже в if'е
 tpm_download(){
-	URL="$(tpm-anz "$1")"
-	OUTPUT="$(tpm-anz "$2")"
-	FORCE="$(tpm-abool "$3")"
-	tpm-az "$4"
+	URL="$(tpm_anz "$1")"
+	OUTPUT="$(tpm_anz "$2")"
+	FORCE="$(tpm_abool "$3")"
+	tpm_az "$4"
 
 	tpm_assert tpm_is_command mktemp
 
@@ -214,16 +237,16 @@ tpm_download(){
 }
 
 _download(){
-	URL="$(tpm-anz "$1")"
-	OUTPUT="$(tpm-anz "$2")"
-	tpm-az
+	URL="$(tpm_anz "$1")"
+	OUTPUT="$(tpm_anz "$2")"
+	tpm_az
 
-	_force_wget_working
+	_force_meta_wget
 	tpm_download "$URL" "$OUTPUT" true
 }
 
 tpm_is_root(){
-	tpm-az "$1"
+	tpm_az "$1"
 
 	tpm_assert tpm_is_command id
 
@@ -231,28 +254,28 @@ tpm_is_root(){
 }
 
 _is_target_db(){
-	tpm-az "$1"
+	tpm_az "$1"
 
 	[ -e "$TARGET/opt/tpm-store/var/lib/tpm/info" ]
 }
 
 _is_target_native_installed(){
-	tpm-az "$1"
+	tpm_az "$1"
 
 	[ -e "$TARGET/opt/tpm-store/var/lib/tpm/info/$1.list" ]
 }
 
 tpm_source(){
-	SCRIPT="$(tpm-anz "$1")"
-	tpm-az "$2"
+	SCRIPT="$(tpm_anz "$1")"
+	tpm_az "$2"
 
 	[ "${SCRIPT#/}" = "$SCRIPT" ] && . "$PWD/$SCRIPT" || . "$SCRIPT"
 	:
 }
 
 _is_target_command(){
-	COMMAND="$(tpm-anz "$1")"
-	tpm-az "$2"
+	COMMAND="$(tpm_anz "$1")"
+	tpm_az "$2"
 
 	tpm_assert tpm_is_command chroot
 
@@ -260,23 +283,23 @@ _is_target_command(){
 }
 
 _target_read_config(){
-	tpm-az "$1"
+	tpm_az "$1"
 
 	tpm_source "$TARGET/opt/tpm-store/etc/tpm.conf"
 }
 
 _target_install_tarball(){
-	CONTROL="$(tpm-anz "$1")"
-	TARBALL="$(tpm-anz "$2")"
-	tpm-az "$3"
+	CONTROL="$(tpm_anz "$1")"
+	TARBALL="$(tpm_anz "$2")"
+	tpm_az "$3"
 
 	tpm_assert tpm_is_root
 
 	tpm_assert tpm_is_command chroot
 
-	_force_command tar tar
-	_force_command gzip gzip
-	_force_command sed sed
+	_force_prog_colon tar tar
+	_force_prog_colon gzip gzip
+	_force_prog_colon sed sed
 
 	tpm_assert _is_target_db
 
@@ -330,8 +353,8 @@ _target_install_tarball(){
 }
 
 _target_install_package(){
-		PACKAGE="$(tpm-anz "$1")"
-		tpm-az "$2"
+		PACKAGE="$(tpm_anz "$1")"
+		tpm_az "$2"
 
 		tpm_assert tpm_is_root
 
@@ -343,14 +366,11 @@ _target_install_package(){
 				COMMAND="${PACKAGE_SUFFIX%%:*}"
 				DEBIAN_PACKAGE="${PACKAGE_SUFFIX#*:}"
 
-				_is_target_command "$COMMAND" && return
+				_target_install_prog_colon "$COMMAND" "$DEBIAN_PACKAGE"
+				;;
 
-				_target_install_debian_package "$DEBIAN_PACKAGE"
-
-				if ! _is_target_command "$COMMAND"; then
-					echo "${0##*/}: $PACKAGE: пакет установлен, но команды всё равно нет" >&2
-					exit 1
-				fi
+			meta:wget)
+				_target_install_meta_wget
 				;;
 
 			lib:*)
@@ -423,7 +443,7 @@ _target_install_package(){
 				(
 					trap "rm -r '$TEMP'" EXIT
 
-					_force_wget_working
+					_force_meta_wget
 
 					tpm_download "https://github.com/$PACKAGE/raw/master/tpm-control" "$TEMP/tpm-control"
 
@@ -432,8 +452,8 @@ _target_install_package(){
 					elif tpm_download "$REPO/all/$PACKAGE.tar.gz" "$TEMP/package.tar.gz" false; then
 						_target_install_tarball "$TEMP/tpm-control" "$TEMP/package.tar.gz"
 					else
-						_force_command tar tar
-						_force_command gzip gzip
+						_force_prog_colon tar tar
+						_force_prog_colon gzip gzip
 
 						tpm_download "https://github.com/$PACKAGE/archive/master.tar.gz" "$TEMP/master.tar.gz" true
 
@@ -450,8 +470,8 @@ _target_install_package(){
 }
 
 _target_remove_native(){
-		PACKAGE="$(tpm-anz "1")"
-		tpm-az "$2"
+		PACKAGE="$(tpm_anz "$1")"
+		tpm_az "$2"
 
 		tpm_assert tpm_is_root
 
@@ -465,7 +485,7 @@ _target_remove_native(){
 			cd "$TARGET/opt/tpm-store/var/lib/tpm/info"
 
 			for I in */*.control; do
-				my_source "$I"
+				tpm_source "$I"
 
 				for J in $DEPENDS; do
 					[ "$J" = "$PACKAGE" ] && ( cd "$OLD_PWD"; _target_remove_native "${I%.control}" )
@@ -495,16 +515,16 @@ _target_remove_native(){
 }
 
 _target_build(){
-		SRC="$(tpm-anz "$1")"
-		OUTPUT="$(tpm-anz "$2")"
-		tpm-az "$3"
+		SRC="$(tpm_anz "$1")"
+		OUTPUT="$(tpm_anz "$2")"
+		tpm_az "$3"
 
 		tpm_assert tpm_is_root
 
 		tpm_assert tpm_is_command chroot
 
-		_force_command tar tar
-		_force_command gzip gzip
+		_force_prog_colon tar tar
+		_force_prog_colon gzip gzip
 
 		tpm_assert _is_target_db
 
@@ -555,7 +575,7 @@ _target_init(){
 		(
 			trap "rm -r '$TEMP'" EXIT
 
-			if chroot "$TARGET" cc -v > "$TEMP/cc"; then
+			if chroot "$TARGET" cc -v 2> "$TEMP/cc"; then
 				while read -r LINE; do
 					case "$LINE" in
 						"Target: "*)
