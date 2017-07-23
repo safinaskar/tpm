@@ -466,7 +466,7 @@ _target_install_package(){
 
 						_target_build "$TEMP/${PACKAGE##*/}-master" "$TEMP/package.tar.gz"
 
-						_target_install_tarball "$TEMP/${PACKAGE##*/}/tpm-control" "$TEMP/package.tar.gz"
+						_target_install_tarball "$TEMP/tpm-control" "$TEMP/package.tar.gz"
 					fi
 				)
 				;;
