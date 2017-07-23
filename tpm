@@ -1,67 +1,106 @@
 #!/bin/sh
 
-# Этот коммент имеет отношение ко всем скриптам tpm. Файлы и папки, созданные mktemp (и mktemp_directory) имеют странные права. Поэтому мы работаем не с ними непосредственно, а с файлами и папками внутри папок, созданных mktemp. Если создать с помощью mktemp папку, использовать её в качестве DESTDIR, затем запаковать в tar-архив, а затем распаковать в /, то / получит права drwx------, а это приведёт к неработоспособности sudo. Также я следил, чтобы не сделать случайно юзера владельцем /
-# На всех UNIX-подобных системах, которые были в моём распоряжении, был gzip. xz не было на OpenBSD 5.5 в той инсталяции, которую я сделал. Так что в качестве компрессора выбираем gzip
-# Этот коммент имеет отношение ко всем скриптам tpm. Считаю зависимость от mktemp нормальной, его обычно можно достать
-# Этот коммент имеет отношение ко всем скриптам tpm. Считаю плохой ситуацию, когда скрипт по необходимости вызывает sudo. Так что любая операция, которая может потребовать прав root, сразу запускается с правами root. Для tpm-upload делаем исключение, т. к. ему нужно залить на ssh с ключами пользователя
-# Некоторые части этого скрипта должны работать в ещё более жёстких условиях, чем те, которые гарантируются зависимостями tpm. Более того, в этих условиях не гарантируется наличие вообще никаких внутренних и внешних команд, кроме тех, которые проверены с помощью check_command в <metasmallenv></metasmallenv>. Такие места помечены <smallenv></smallenv>. Тег относится в том числе к функциям, объявленным внутри него. В каждом блоке <smallenv></smallenv> нужно проверять всё, что используешь, кроме явно проверенных в <metasmallenv></metasmallenv>
-# В скриптах tpm в единственном месте захардкодено нечто, имеющее отношение конкретно к моей инфраструктуре: в варианте case'а, который отвечает за bootstrap
+# Не имеет права перезапускать себя, т. к. может быть запущен через, скажем, curl | sh. Нельзя использовать $0, кроме как для вывода сообщений об ошибках. Не может опираться даже на базовые предположения, которые считаются верными для всех остальных программ, устанавливаемых через tpm. Этот скрипт умеет работать с системами, находящимися в chroot-окружениях
 
-# <metasmallenv>
-# Сначала предположим, что echo и exit у нас всё-таки есть
+# Предполагаем, что echo и exit есть
 
-check_command(){
-	if ! type "$1" > /dev/null 2>&1; then
-		echo "${0##*/}: $1: command not found" >&2
+# Доступна внутренняя или внешняя команда
+tpm_is_command(){
+	type "$1" > /dev/null 2>&1
+}
+
+tpm_assert(){
+	if ! "$@"; then
+		echo "${0##*/}: $*: assertion failed" >&2
 		exit 1
 	fi
 }
 
-check_command type
+tpm_assert tpm_is_command type
 
-# Теперь у нас есть echo, exit и type. Но на всякий случай проверим echo и exit
+# Теперь есть ещё и type. На всякий случай проверим echo и exit ещё раз:
 
-check_command echo
-check_command exit
+tpm_assert tpm_is_command echo
+tpm_assert tpm_is_command exit
 
-# Теперь проверим ещё несколько команд
+# Проверим ещё вот эти, чтобы больше о них не думать:
 
-check_command :
-check_command set
-check_command [
-check_command return
-check_command break
-check_command continue
-check_command printf
-check_command .
-check_command read
-check_command cd
-# </metasmallenv>
+tpm_assert tpm_is_command .
+tpm_assert tpm_is_command :
+tpm_assert tpm_is_command [
 
-# <smallenv>
-check_command trap
-check_command eval
+tpm_assert tpm_is_command break
+tpm_assert tpm_is_command return
+tpm_assert tpm_is_command continue
+tpm_assert tpm_is_command trap
+tpm_assert tpm_is_command read
+tpm_assert tpm_is_command cd
+tpm_assert tpm_is_command printf
+tpm_assert tpm_is_command shift
+tpm_assert tpm_is_command eval
+
+tpm_assert tpm_is_command rm
+tpm_assert tpm_is_command mkdir
+tpm_assert tpm_is_command rmdir
+tpm_assert tpm_is_command cat
+tpm_assert tpm_is_command cp
+
+# Теперь начало основного скрипта
+
+tpm_assert tpm_is_command set
 
 set -e
 
-ON_EXIT=":"
-trap 'eval "$ON_EXIT"' EXIT
+tpm_anz(){
+	[ -z "$1" ] && echo "${0##*/}: argument is empty" >&2 && exit 1
+	printf '%s\n' "$1"
+}
 
-if [ "${0#/}" = "$0" ]; then
-	ME="$PWD/$0"
-else
-	ME="$0"
-fi
-# </smallenv>
+tpm_az(){
+	[ -n "$1" ] && echo "${0##*/}: too many arguments" >&2 && exit 1
+	:
+}
 
-# <smallenv>
-mktemp_directory(){
-	check_command mktemp
-	check_command rm
-	check_command mkdir
+tpm_abool(){
+	case "$1" in
+		true|false)
+			printf '%s\n' "$1"
+			;;
+		*)
+			echo "${0##*/}: boolean argument is not true and is not false" >&2
+			exit 1
+			;;
+	esac
+	:
+}
+
+tpm_unz(){
+	[ -z "$1" ] && usage
+	printf '%s\n' "$1"
+}
+
+tpm_uz(){
+	[ -n "$1" ] && usage
+	:
+}
+
+tpm_ueq(){
+	[ "$1" != "$2" ] && usage
+	:
+}
+
+tpm_is_not(){
+	! "$@"
+}
+
+tpm_mktemp_directory(){
+	TEMPLATE="${1:-/tmp/tpm-XXXXXX}"
+	tpm_az "$2"
+
+	tpm_assert tpm_is_command mktemp
 
 	while :; do
-		RESULT="$(mktemp /tmp/tpm-XXXXXX)"
+		RESULT="$(mktemp "$TEMPLATE")"
 		rm "$RESULT"
 		if mkdir -m 700 "$RESULT" 2> /dev/null; then
 			break
@@ -70,159 +109,248 @@ mktemp_directory(){
 
 	printf '%s\n' "$RESULT"
 }
-# </smallenv>
 
-# <smallenv>
-download(){
-	check_command mktemp
-	check_command wget
-	check_command rm
-	check_command cat
+TARGET=/bad-target # На всякий случай
 
-	printf '%s' "Downloading $1... "
+# Вызывать только в ситуации, когда мы уверены, что пакет не установлен
+_target_install_debian_package(){
+	PACKAGE="$(tpm_anz "$1")"
+	tpm_az "$2"
 
-	WGET_OUTPUT="$(mktemp /tmp/tpm-wget-output-XXXXXX)"
+	tpm_assert tpm_is_root
 
-	if ! wget -O "$2" "$1" 2> "$WGET_OUTPUT"; then
-		rm -f "$2" || :
-		if "$3"; then
-			printf 'failed\n' || :
-			cat "$WGET_OUTPUT" >&2 || :
-		else
-			printf 'failed, but this is OK\n' || :
-		fi
-		rm "$WGET_OUTPUT"
-		return 1
-	fi
+	tpm_assert tpm_is_command chroot
 
-	rm "$WGET_OUTPUT"
-
-	printf 'done\n'
-}
-# </smallenv>
-
-# <smallenv>
-my_source(){
-	if [ "${1#/}" = "$1" ]; then
-		. "$PWD/$1"
-	else
-		. "$1"
-	fi
-}
-# </smallenv>
-
-install_debian_package(){
-	# <smallenv>
-	if ! type apt-get > /dev/null 2>&1; then
-		echo "${0##*/}: $1: package seems to be not present and we have no apt-get to install it" >&2
+	if ! _is_target_command apt-get; then
+		echo "${0##*/}: $PACKAGE: package seems to be not installed and we have no apt-get to install it" >&2
 		exit 1
 	fi
 
 	# Будем считать, что наличие файла /var/lib/apt/lists/lock говорит о том, что как минимум один раз был выполнен apt-get update
-	if ! [ -e /var/lib/apt/lists/lock ]; then
-		apt-get update
+	if ! [ -e "$TARGET/var/lib/apt/lists/lock" ]; then
+		chroot "$TARGET" apt-get update
 	fi
 
 	# LC_ALL=C, т. к. если не установлены локали, то apt-get будет выдавать кучу сообщений об ошибках
 	# Нужно писать именно -o Apt::Install-Recommends=false, а не --no-install-recommends, т. к. apt из sarge не понимает --no-install-recommends
-	LC_ALL=C apt-get install -y -o Apt::Install-Recommends=false "$1"
-	# </smallenv>
+	LC_ALL=C chroot "$TARGET" apt-get install -y -o Apt::Install-Recommends=false "$PACKAGE"
 }
 
-install_program(){
-	# <smallenv>
-	PACKAGE_SUFFIX="${1#prog:}"
-	COMMAND="${PACKAGE_SUFFIX%%:*}"
-	DEBIAN_PACKAGE="${PACKAGE_SUFFIX#*:}"
+_force_command(){
+	COMMAND="$(tpm-anz "$1")"
+	PACKAGE="$(tpm-anz "$2")"
+	tpm-az "$3"
 
-	type "$COMMAND" > /dev/null 2>&1 && return
+	if ! tpm_is_command "$COMMAND"; then
+		if [ "$TARGET" != / ]; then
+			echo "${0##*/}: no $COMMAND and target is not /, so we will not install it" >&2
+			exit 1
+		fi
 
-	install_debian_package "$DEBIAN_PACKAGE"
+		_target_install_debian_package "$PACKAGE"
 
-	if ! type "$COMMAND" > /dev/null 2>&1; then
-		echo "${0##*/}: $1: пакет установлен, но команды всё равно нет" >&2
-		exit 1
+		! tpm_is_command "$COMMAND" && echo "${0##*/}: we just installed $COMMAND, but still cannot run it" >&2 && exit 1
 	fi
-	# </smallenv>
 }
 
-{
-case "$1" in
-	install-package)
-		# <smallenv>
-		check_command id
-		check_command mkdir
-		check_command rm
+tpm_is_wget_working(){
+	tpm-az "$1"
 
-		CONTROL="$2"
-		PACKAGE_FILE="$3"
+	wget -O /dev/null https://github.com 2> /dev/null
+}
 
-		[ "$(id -u)" != 0 ] && echo "${0##*/}: you are not root" >&2 && exit 1
+_force_wget_working(){
+	tpm-az "$1"
 
-		my_source "$CONTROL"
+	_force_command wget wget
 
-		[ -e "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list" ] && echo "${0##*/}: $PACKAGE is already installed" >&2 && exit 1
+	if ! tpm_is_wget_working; then
+		if [ "$TARGET" != / ]; then
+			wget -O /dev/null https://github.com
+			echo "${0##*/}: cannot download https://github.com, possible reason: no certificates on the system, and target is not /, so we will not install the certificates" >&2
+			exit 1
+		fi
 
-		for I in $DEPENDS; do
-			"$ME" install "$I"
-		done
+		_target_install_debian_package ca-certificates
 
-		for I in $LIBS; do
-			"$ME" install "lib:$I"
-		done
+		if ! wget -O /dev/null https://github.com; then
+			echo "${0##*/}: we just installed ca-certificates, but still cannot download https://github.com, possible reasons: no internet connection, DNS problems, https://github.com is down" >&2
+			exit 1
+		fi
+	fi
+}
 
-		echo "Installing $PACKAGE"
+# Исключение из правила: должно работать корректно даже в if'е
+tpm_download(){
+	URL="$(tpm-anz "$1")"
+	OUTPUT="$(tpm-anz "$2")"
+	FORCE="$(tpm-abool "$3")"
+	tpm-az "$4"
 
-		mkdir -p "/opt/tpm-store/var/lib/tpm/info/${PACKAGE%/*}"
+	tpm_assert tpm_is_command mktemp
 
-		TEMP="$(mktemp_directory)"
-		ON_EXIT="rm -r \"\$TEMP\" || :; $ON_EXIT"
+	tpm_assert tpm_is_wget_working
 
-		check_command tar
-		check_command gzip
-		check_command sed
-		check_command cat
+	printf '%s' "Downloading $URL... "
 
-		( cd /; tar --numeric-owner -xzv ) < "$PACKAGE_FILE" > "$TEMP/list"
+	WGET_OUTPUT="$(mktemp /tmp/tpm-wget-output-XXXXXX)"
 
-		sed -e 's/^\.//' -e 's~^/$~/.~' -e 's~/$~~' "$TEMP/list" > "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list"
+	(
+		trap "rm '$WGET_OUTPUT'" EXIT
+
+		if ! wget -O "$OUTPUT" "$URL" 2> "$WGET_OUTPUT"; then
+			rm -f "$OUTPUT"
+			if "$FORCE"; then
+				printf 'failed\n'
+				cat "$WGET_OUTPUT" >&2
+			else
+				printf 'failed, but this is OK\n'
+			fi
+			return 1
+		fi
+
+		printf 'done\n'
+	)
+}
+
+_download(){
+	URL="$(tpm-anz "$1")"
+	OUTPUT="$(tpm-anz "$2")"
+	tpm-az
+
+	_force_wget_working
+	tpm_download "$URL" "$OUTPUT" true
+}
+
+tpm_is_root(){
+	tpm-az "$1"
+
+	tpm_assert tpm_is_command id
+
+	[ "$(id -u)" = 0 ]
+}
+
+_is_target_db(){
+	tpm-az "$1"
+
+	[ -e "$TARGET/opt/tpm-store/var/lib/tpm/info" ]
+}
+
+_is_target_native_installed(){
+	tpm-az "$1"
+
+	[ -e "$TARGET/opt/tpm-store/var/lib/tpm/info/$1.list" ]
+}
+
+tpm_source(){
+	SCRIPT="$(tpm-anz "$1")"
+	tpm-az "$2"
+
+	[ "${SCRIPT#/}" = "$SCRIPT" ] && . "$PWD/$SCRIPT" || . "$SCRIPT"
+	:
+}
+
+_is_target_command(){
+	COMMAND="$(tpm-anz "$1")"
+	tpm-az "$2"
+
+	tpm_assert tpm_is_command chroot
+
+	chroot "$TARGET" sh -c "type '$COMMAND' > /dev/null 2>&1"
+}
+
+_target_read_config(){
+	tpm-az "$1"
+
+	tpm_source "$TARGET/opt/tpm-store/etc/tpm.conf"
+}
+
+_target_install_tarball(){
+	CONTROL="$(tpm-anz "$1")"
+	TARBALL="$(tpm-anz "$2")"
+	tpm-az "$3"
+
+	tpm_assert tpm_is_root
+
+	tpm_assert tpm_is_command chroot
+
+	_force_command tar tar
+	_force_command gzip gzip
+	_force_command sed sed
+
+	tpm_assert _is_target_db
+
+	tpm_source "$CONTROL"
+
+	tpm_assert tpm_is_not _is_target_native_installed "$PACKAGE"
+
+	for I in $DEPENDS; do
+		_target_install_package "$I"
+	done
+
+	for I in $LIBS; do
+		_target_install_package "lib:$I"
+	done
+
+	echo "Installing $PACKAGE"
+
+	mkdir -p "$TARGET/opt/tpm-store/var/lib/tpm/info/${PACKAGE%/*}"
+
+	TEMP="$(tpm_mktemp_directory)"
+
+	(
+		trap "rm -r '$TEMP'" EXIT
+
+		( cd "$TARGET"; tar --numeric-owner -xzv ) < "$TARBALL" > "$TEMP/list"
+
+		sed -e 's/^\.//' -e 's~^/$~/.~' -e 's~/$~~' "$TEMP/list" > "$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list"
 
 		# Делаем cat'ом, чтобы файл создался с нужными правами и владельцем
-		cat "$CONTROL" > "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.control"
+		cat "$CONTROL" > "$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE.control"
 
-		if type ldd > /dev/null 2>&1; then
+		if _is_target_command ldd; then
 			while IFS="" read -r FILE; do
-				if ! [ -f "$FILE" ]; then
+				if ! [ -f "$TARGET$FILE" ]; then
 					continue
 				fi
 
-				ldd "$FILE" > /dev/null 2> "$TEMP/ldd-error" || :
+				chroot "$TARGET" ldd "$FILE" > /dev/null 2> "$TEMP/ldd-error" || :
 
 				if [ -s "$TEMP/ldd-error" ]; then
 					cat "$TEMP/ldd-error"
 					echo "${0##*/}: link errors, removing package back" >&2
-					"$ME" remove "$PACKAGE"
+					_target_remove_native "$PACKAGE"
 					exit 1
 				fi
-			done < "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list"
+			done < "$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list"
+		else
+			echo "${0##*/}: warning: no ldd, cannot be sure everything is linked properly" >&2
 		fi
-		# </smallenv>
-		;;
+	)
+}
 
-	install)
-		# <smallenv>
-		check_command id
+_target_install_package(){
+		PACKAGE="$(tpm-anz "$1")"
+		tpm-az "$2"
 
-		PACKAGE="$2"
+		tpm_assert tpm_is_root
 
-		[ "$(id -u)" != 0 ] && echo "${0##*/}: you are not root" >&2 && exit 1
-		# </smallenv>
+		tpm_assert _is_target_db
 
 		case "$PACKAGE" in
 			prog:*)
-				# <smallenv>
-				install_program "$PACKAGE"
-				# </smallenv>
+				PACKAGE_SUFFIX="${PACKAGE#prog:}"
+				COMMAND="${PACKAGE_SUFFIX%%:*}"
+				DEBIAN_PACKAGE="${PACKAGE_SUFFIX#*:}"
+
+				_is_target_command "$COMMAND" && return
+
+				_target_install_debian_package "$DEBIAN_PACKAGE"
+
+				if ! _is_target_command "$COMMAND"; then
+					echo "${0##*/}: $PACKAGE: пакет установлен, но команды всё равно нет" >&2
+					exit 1
+				fi
 				;;
 
 			lib:*)
@@ -231,10 +359,10 @@ case "$1" in
 				PACKAGE_SUFFIX="${PACKAGE_SUFFIX#*:}"
 				VERSION="${PACKAGE_SUFFIX%%:*}"
 
-				. "${ME%/*}/../etc/tpm.conf"
+				_target_read_config
 
 				check_library(){
-					for I in "/lib/$LIBRARY.so.$VERSION" "/usr/lib/$LIBRARY.so.$VERSION" "/lib/$SYSTEM_ARCH/$LIBRARY.so.$VERSION" "/usr/lib/$SYSTEM_ARCH/$LIBRARY.so.$VERSION"; do
+					for I in "$TARGET/lib/$LIBRARY.so.$VERSION" "$TARGET/usr/lib/$LIBRARY.so.$VERSION" "$TARGET/lib/$SYSTEM_ARCH/$LIBRARY.so.$VERSION" "$TARGET/usr/lib/$SYSTEM_ARCH/$LIBRARY.so.$VERSION"; do
 						if [ -e "$I" ]; then
 							return 0
 						fi
@@ -243,9 +371,9 @@ case "$1" in
 					return 1
 				}
 
-				check_library && exit
+				check_library && return
 
-				install_debian_package "$LIBRARY$VERSION"
+				_target_install_debian_package "$LIBRARY$VERSION"
 
 				if ! check_library; then
 					echo "${0##*/}: $PACKAGE: пакет установлен, но библиотеки всё равно нет" >&2
@@ -265,19 +393,19 @@ case "$1" in
 					DEBIAN_PACKAGE="${PACKAGE_SUFFIX#*:}"
 				fi
 
-				"$ME" install prog:cc:gcc
-
 				check_library(){
-					if echo 'int main(void){}' | cc -o /dev/null -l"${LIBRARY#lib}" -x c - 2> /dev/null; then
-						return 0
-					else
-						return 1
-					fi
+					for I in "$TARGET/lib/$LIBRARY.so" "$TARGET/usr/lib/$LIBRARY.so" "$TARGET/lib/$SYSTEM_ARCH/$LIBRARY.so" "$TARGET/usr/lib/$SYSTEM_ARCH/$LIBRARY.so"; do
+						if [ -e "$I" ]; then
+							return 0
+						fi
+					done
+
+					return 1
 				}
 
-				check_library && exit
+				check_library && return
 
-				install_debian_package "$DEBIAN_PACKAGE"
+				_target_install_debian_package "$DEBIAN_PACKAGE"
 
 				if ! check_library; then
 					echo "${0##*/}: $PACKAGE: пакет установлен, но библиотеки всё равно нет" >&2
@@ -286,88 +414,244 @@ case "$1" in
 				;;
 
 			*)
-				# <smallenv>
-				check_command rm
+				_is_target_native_installed "$PACKAGE" && return
 
-				[ -e "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list" ] && exit
-
-				. "${ME%/*}/../etc/tpm.conf"
+				_target_read_config
 
 				TEMP="$(mktemp_directory)"
-				ON_EXIT="rm -r \"\$TEMP\" || :; $ON_EXIT"
 
-				if download "$REPO/$SYSTEM_ARCH/$PACKAGE.tar.gz" "$TEMP/package.tar.gz" false; then
-					download "https://github.com/$PACKAGE/raw/master/tpm-control" "$TEMP/tpm-control" true
+				(
+					trap "rm -r '$TEMP'" EXIT
 
-					"$ME" install-package "$TEMP/tpm-control" "$TEMP/package.tar.gz"
-				elif download "$REPO/all/$PACKAGE.tar.gz" "$TEMP/package.tar.gz" false; then
-					download "https://github.com/$PACKAGE/raw/master/tpm-control" "$TEMP/tpm-control" true
+					_force_wget_working
 
-					"$ME" install-package "$TEMP/tpm-control" "$TEMP/package.tar.gz"
-				else
-					# </smallenv> (sic!)
-					download "https://github.com/$PACKAGE/archive/master.tar.gz" "$TEMP/master.tar.gz" true
+					tpm_download "https://github.com/$PACKAGE/raw/master/tpm-control" "$TEMP/tpm-control"
 
-					cd "$TEMP"
+					if tpm_download "$REPO/$SYSTEM_ARCH/$PACKAGE.tar.gz" "$TEMP/package.tar.gz" false; then
+						_target_install_tarball "$TEMP/tpm-control" "$TEMP/package.tar.gz"
+					elif tpm_download "$REPO/all/$PACKAGE.tar.gz" "$TEMP/package.tar.gz" false; then
+						_target_install_tarball "$TEMP/tpm-control" "$TEMP/package.tar.gz"
+					else
+						_force_command tar tar
+						_force_command gzip gzip
 
-					tar -xzf "$TEMP/master.tar.gz"
+						tpm_download "https://github.com/$PACKAGE/archive/master.tar.gz" "$TEMP/master.tar.gz" true
 
-					cd "${PACKAGE##*/}-master"
+						( cd "$TEMP"; tar -xzf "$TEMP/master.tar.gz" )
 
-					"$ME" build -o "$TEMP/package.tar.gz"
+						_target_build "$TEMP/${PACKAGE##*/}-master" "$TEMP/package.tar.gz"
 
-					"$ME" install-package tpm-control "$TEMP/package.tar.gz"
-					# <smallenv> (sic!)
-				fi
-				# </smallenv>
+						_target_install_tarball "$TEMP/${PACKAGE##*/}/tpm-control" "$TEMP/package.tar.gz"
+					fi
+				)
 				;;
 		esac
+		:
+}
+
+_target_remove_native(){
+		PACKAGE="$(tpm-anz "1")"
+		tpm-az "$2"
+
+		tpm_assert tpm_is_root
+
+		tpm_assert tpm_is_command sort
+		
+		tpm_assert _is_target_db
+		tpm_assert _is_target_native_installed "$PACKAGE"
+
+		(
+			OLD_PWD="$PWD"
+			cd "$TARGET/opt/tpm-store/var/lib/tpm/info"
+
+			for I in */*.control; do
+				my_source "$I"
+
+				for J in $DEPENDS; do
+					[ "$J" = "$PACKAGE" ] && ( cd "$OLD_PWD"; _target_remove_native "${I%.control}" )
+				done
+			done
+		)
+
+		TEMP="$(mktemp_directory)"
+
+		(
+			trap "rm -r '$TEMP'" EXIT
+
+			sort -r "$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list" > "$TEMP/list"
+
+			echo "Removing $PACKAGE"
+
+			while IFS="" read -r FILE; do
+				if [ -d "$TARGET$FILE" ]; then
+					rmdir "$TARGET$FILE" 2> /dev/null || :
+				else
+					rm -f "$FILE"
+				fi
+			done < "$TEMP/list"
+		)
+
+		rm "$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE".*
+}
+
+_target_build(){
+		SRC="$(tpm-anz "$1")"
+		OUTPUT="$(tpm-anz "$2")"
+		tpm-az "$3"
+
+		tpm_assert tpm_is_root
+
+		tpm_assert tpm_is_command chroot
+
+		_force_command tar tar
+		_force_command gzip gzip
+
+		tpm_assert _is_target_db
+
+		tpm_source tpm-control
+
+		for I in $DEPENDS $BUILD_DEPENDS; do
+			_target_install_package "$I"
+		done
+
+		for I in $LIBS; do
+			_target_install_package "libdev:$I"
+		done
+
+		mkdir -p "$TARGET/tmp"
+		TEMP="$(mktemp_directory "$TARGET/tmp/tpm-XXXXXX")"
+
+		(
+			trap "rm -r '$TEMP'" EXIT
+
+			INTERNAL_TEMP="/tmp/${TEMP##*/}"
+
+			cp -r "$SRC" "$TEMP/src"
+
+			# Скрипту сборки можно опираться на то, что существует пустая папка под названием $BUILD, которая потом будет автоматически удалена. И что папка с сорцами лежит в $SRC
+			mkdir "$TEMP/build"
+
+			# Мы вынуждены патчить ещё и CFLAGS и CXXFLAGS, т. к. cmake игнорирует CPPFLAGS
+			PREFIX=/opt/tpm-store DESTDIR="$INTERNAL_TEMP/destdir" SRC="$INTERNAL_TEMP/src" BUILD="$INTERNAL_TEMP/build" CPPFLAGS="$CPPFLAGS -I/opt/tpm-store/include" CFLAGS="$CFLAGS -I/opt/tpm-store/include" CXXFLAGS="$CXXFLAGS -I/opt/tpm-store/include" LDFLAGS="$LDFLAGS -L/opt/tpm-store/lib" chroot "$TARGET" sh -c "cd \"\$SRC\" || exit 1; $INSTALL"
+
+			( cd "$TEMP/destdir"; tar --numeric-owner -cz . ) > "$OUTPUT"
+		)
+}
+
+_target_init(){
+		# Эта функция инициализирует систему для установки туда tpm-пакетов. После инициализации полученная система будет содержать 0 пакетов. tpm в ней не нужен, т. к., возможно, мы и дальше будем манипулировать этой системой снаружи. wget в ней тоже не нужен, т. к. опять-таки, возможно, мы и дальше будем скачивать пакеты снаружи и устанавливать туда
+
+		tpm_az "$1"
+
+		tpm_assert tpm_is_root
+
+		tpm_assert tpm_is_command chroot
+		tpm_assert tpm_is_command mktemp
+
+		[ -e "$TARGET/opt/tpm-store" ] && echo "${0##*/}: already initialized" >&2 && exit 1
+
+		TEMP="$(tpm_mktemp_directory)"
+
+		(
+			trap "rm -r '$TEMP'" EXIT
+
+			if chroot "$TARGET" cc -v > "$TEMP/cc"; then
+				while read -r LINE; do
+					case "$LINE" in
+						"Target: "*)
+							ARCH="${LINE#Target: }"
+							;;
+					esac
+					:
+				done < "$TEMP/cc"
+			else
+				CONFIG_GUESS="$(mktemp "$TARGET/tpm-config.guess-XXXXXX")"
+
+				(
+					trap "rm '$CONFIG_GUESS'" EXIT
+
+					_download "http://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess;hb=HEAD" "$CONFIG_GUESS"
+
+					chroot "$TARGET" sh "${CONFIG_GUESS##*/}" > "$TEMP/arch"
+
+					echo "${0##*/}: warning: config.guess guessed this arch: $(cat "$TEMP/arch"), it may be inaccurate, especially if host and target arch differ" >&2
+
+					ARCH="$(cat "$TEMP/arch")"
+				)
+			fi
+		)
+
+		echo "Initializing"
+
+		mkdir -p "$TARGET/opt/tpm-store/etc"
+
+		# HARD
+		cat << EOF > "$TARGET/opt/tpm-store/etc/tpm.conf"
+SYSTEM_ARCH="$ARCH"
+REPO="http://safinaskar.com/tpm"
+EOF
+
+		mkdir -p "$TARGET/opt/tpm-store/var/lib/tpm/info"
+}
+
+usage(){
+	tpm_az "$1"
+
+	cat << EOF >&2
+Usage:
+. tpm # as a shell library
+...
+EOF
+
+	exit 1
+}
+
+EAT_TARGET='shift; case "$1" in --root=*) TARGET="${1#--root=}"; shift;; *) TARGET=/;; esac; :'
+
+case "$1" in
+	"")
+		# OK, somebody use us as a shell library
+		;;
+
+	init)
+		eval "$EAT_TARGET"
+		tpm_uz "$1"
+
+		_target_init
+		;;
+
+	install-tarball)
+		eval "$EAT_TARGET"
+		CONTROL="$(tpm_unz "$1")
+		TARBALL="$(tpm_unz "$2")
+		tpm_uz "$3"
+
+		_target_install_tarball "$CONTROL" "$TARBALL"
+		;;
+
+	install)
+		eval "$EAT_TARGET"
+		PACKAGE="$(tpm_unz "$1")
+		tpm_uz "$2"
+
+		_target_install_package "$PACKAGE"
 		;;
 
 	remove)
-		PACKAGE="$2"
+		eval "$EAT_TARGET"
+		PACKAGE="$(tpm_unz "$1")
+		tpm_uz "$2"
 
-		[ "$(id -u)" != 0 ] && echo "${0##*/}: you are not root" >&2 && exit 1
-
-		if ! [ -e "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list" ]; then
-			echo "${0##*/}: $PACKAGE is not installed" >&2
-			exit 1
-		fi
-
-		cd /opt/tpm-store/var/lib/tpm/info
-
-		for I in */*.control; do
-			my_source "$I"
-
-			for J in $DEPENDS; do
-				[ "$J" = "$PACKAGE" ] && "$ME" remove "${I%.control}"
-			done
-		done
-
-		TEMP="$(mktemp_directory)"
-		ON_EXIT="rm -r \"\$TEMP\" || :; $ON_EXIT"
-
-		tac "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list" > "$TEMP/list"
-
-		echo "Removing $PACKAGE"
-
-		while IFS="" read -r FILE; do
-			if [ -d "$FILE" ]; then
-				rmdir "$FILE" 2> /dev/null || :
-			else
-				rm "$FILE" 2> /dev/null || :
-			fi
-		done < "$TEMP/list"
-
-		rm /opt/tpm-store/var/lib/tpm/info/"$PACKAGE".*
+		_target_remove_native "$PACKAGE"
 		;;
 
 	list)
-		if ! [ -e /opt/tpm-store/var/lib/tpm/info ]; then
-			exit
-		fi
+		eval "$EAT_TARGET"
+		tpm_uz "$1"
 
-		cd /opt/tpm-store/var/lib/tpm/info
+		tpm_assert _is_target_db
+
+		cd "$TARGET/opt/tpm-store/var/lib/tpm/info"
 
 		for I in */*.list; do
 			if ! [ -e "$I" ]; then
@@ -379,233 +663,39 @@ case "$1" in
 		;;
 
 	build)
-		# $2 is -o
-		OUTPUT="$3"
+		eval "$EAT_TARGET"
+		tpm_ueq "$1" "-o"
+		OUTPUT="(tpm_unz "$2")"
+		tpm_uz "$3"
 
-		[ "$(id -u)" != 0 ] && echo "${0##*/}: you are not root" >&2 && exit 1
-
-		my_source tpm-control
-
-		for I in $DEPENDS $BUILD_DEPENDS; do
-			"$ME" install "$I"
-		done
-
-		for I in $LIBS; do
-			"$ME" install "libdev:$I"
-		done
-
-		TEMP="$(mktemp_directory)"
-		ON_EXIT="rm -r \"\$TEMP\" || :; $ON_EXIT"
-
-		export PREFIX="/opt/tpm-store"
-		export DESTDIR="$TEMP/destdir"
-
-		sh -c "$INSTALL"
-
-		( cd "$DESTDIR"; tar --numeric-owner -cz . ) > "$OUTPUT"
+		_target_build . "$OUTPUT"
 		;;
 
 	bootstrap)
-		# <smallenv>
-		# Здесь мы не можем делать предположение, что мы - файл. Значит, мы не можем перезапускать себя с помощью "$ME"
-		# Список DEPENDS у tpm должен быть синхронизирован с bootstrap. И вообще вся функциональность tpm должна быть синхронизирована с bootstrap
-		# В bootstrap'е предполагаем, что бинарная версия пакета tpm выложена на репу
+		eval "$EAT_TARGET"
+		tpm_uz "$1"
 
-		check_command id
-
-		[ "$(id -u)" != 0 ] && echo "${0##*/}: you are not root" >&2 && exit 1
-
-		check_command rm
-		check_command sh
-		check_command mkdir
-		check_command cat
-		check_command chmod
-
-		[ -e /opt/tpm-store/var/lib/tpm ] && echo "${0##*/}: tpm data base already exists" >&2 && exit 1
-
-		####
-
-		install_program prog:wget:wget
-
-		if ! wget -O /dev/null https://github.com 2> /dev/null; then
-			if ! type apt-get > /dev/null 2>&1; then
-				wget -O /dev/null https://github.com
-				echo "${0##*/}: test download https://github.com failed, possible reason: no certificates on the system, and we don't have apt-get, so cannot install them" >&2
-				exit 1
-			fi
-
-			install_debian_package ca-certificates
-
-			if ! wget -O /dev/null https://github.com 2> /dev/null; then
-				wget -O /dev/null https://github.com
-				echo "${0##*/}: we installed ca-certificates, but test download https://github.com still fails, possible reasons: no internet connection, DNS problems, https://github.com is down" >&2
-				exit 1
-			fi
-		fi
-
-		####
-
-		if ! { [ -e /opt/tpm-store/etc/tpm.conf ] && . /opt/tpm-store/etc/tpm.conf && [ -n "$SYSTEM_ARCH" ]; }; then
-			TEMP="$(mktemp_directory)"
-			ON_EXIT="rm -r \"\$TEMP\" || :; $ON_EXIT"
-
-			if ! type cc > /dev/null 2>&1; then
-				echo "${0##*/}: warning: config not found and no cc, trying config.guess" >&2
-
-				download "http://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess;hb=HEAD" "$TEMP/config.guess" true
-				sh "$TEMP/config.guess" > "$TEMP/arch"
-
-				echo "${0##*/}: config.guess guessed this arch: $(cat "$TEMP/arch"), if this is true, write this to config and re-run this bootstrap script" >&2
-				exit 1
-			fi
-
-			cc -v 2> "$TEMP/cc"
-
-			while read -r LINE; do
-				case "$LINE" in
-					"Target: "*)
-						SYSTEM_ARCH="${LINE#Target: }"
-						;;
-				esac
-			done < "$TEMP/cc"
-		fi
-
-		mkdir -p /opt/tpm-store/etc
-
-		cat << EOF > /opt/tpm-store/etc/tpm.conf
-SYSTEM_ARCH="$SYSTEM_ARCH"
-REPO="http://safinaskar.com/tpm"
-EOF
-
-		####
-
-		mkdir -p /opt/tpm-store/bin
-		download "https://github.com/safinaskar/tpm/raw/master/tpm" /opt/tpm-store/bin/tpm true
-		chmod +x /opt/tpm-store/bin/tpm
-
-		####
-
-		/opt/tpm-store/bin/tpm install safinaskar/tpm
-		# </smallenv>
+		# HARD
+		_target_init
+		_target_install_package safinaskar/tpm
 		;;
 
 	upgrade-tpm)
-		[ "$(id -u)" != 0 ] && echo "${0##*/}: you are not root" >&2 && exit 1
+		eval "$EAT_TARGET"
+		tpm_uz "$1"
 
-		TEMP="$(mktemp_directory)"
-		ON_EXIT="rm -r \"\$TEMP\" || :; $ON_EXIT"
-
-		cp "$ME" "$TEMP/me"
-
-		"$ME" remove safinaskar/tpm
-
-		mkdir -p /opt/tpm-store/bin
-		mv "$TEMP/me" "$ME"
-
-		# Во-первых, предыдущий $ME удалён, поэтому мы правильно сделали, что сохранили его в $TEMP/me. Но у меня ещё есть подозрение, что при создании нового $ME будет запись в иноду, которую интерпретатор держит открытым файловым дескриптором. Поэтому весь скрипт должен быть ещё заключён в фигурные скобки
-		"$ME" install safinaskar/tpm
+		# HARD
+		tpm_assert tpm_is_root
+		_target_remove_native safinaskar/tpm
+		_target_install_package safinaskar/tpm
 		;;
 
-	remove-all)
-		[ "$(id -u)" != 0 ] && echo "${0##*/}: you are not root" >&2 && exit 1
+	shlib)
+		echo /opt/tpm-store/bin/tpm
+		;;
 
-		if ! [ -e /opt/tpm-store/var/lib/tpm/info ]; then
-			exit
-		fi
-
-		cd /opt/tpm-store/var/lib/tpm/info
-
-		for I in */*.list; do
-			if ! [ -e "$I" ]; then
-				exit
-			fi
-
-			if [ "${I%.list}" != safinaskar/tpm ]; then
-				"$ME" remove "${I%.list}"
-			fi
-		done
-
-		"$ME" upgrade-tpm
+	*)
+		usage
 		;;
 esac
-
-exit
-}
-
-
-
-
-
-
-
-[end] usage
-[doc] bash, т. к. %q (не к tpm)
-[doc] howto: создай conf (проверять на непустоту поля)
-[end] read all prev versions, including aslife
-[doc] [done] deps build-deps prog:
-[doc] [done] archs
-[doc] соответствие моих команд и команд apt/dpkg
-[doc] [done] split на разные пакеты (убрать из сд)
-[doc] [done] db
-[doc] [done] есть bootstrap
-[doc] [done] есть arch all/any
-[doc] [done] проблема libc всё же решена
-[doc] (повтор) описать все сорцы
-[doc] вы должны установить PATH, в том числе у sudo
-[doc] не важно, если trap неправильно работает в target shell, речь идёт всего лишь об удалении временных файлов
-[doc] прочитать сорцы и написать доки
-[doc] $INSTALL должен ещё и собирать. но рекомендуется собирать заранее (чтоб не от рута собирать, а то как потом make clean от юзера будешь делать, да и вообще собирать от юзера рекомендуется). но при этом нужно, чтобы на этапе $INSTALL tpm мог установить свой $DESTDIR
-[doc] решил сделать bootstrap-скрипт частью основного. так проще. в таком случае bootstrap имеет доступ к функциям основного скрипта, и это хорошо. да запускать немного сложнее, нужно передавать аргумент
-[end] тест бубунта
-[end] удаляй с помощью rm -r /opt/tpm-store
-[doc] prog: зависит от бинаря в системе (при этом проверяется тупо)
-
-[goal]replace dist.sh/aslife, binary bootstrap on gentoo, source bootstrap on gentoo (и на экзотических ос)
-[end] супертестирование на реальном дереве. тест ldd. тест cc -v. тест config.guess
-[end] read comments, chmod +x, comments перенести to readme, поверхностно осмотреть проект
-[end] проверить все предположения о системе на: minimal debootstrap, d-i busybox, unixen, distros, android, old debian. во всех этих системах bootstrap'нуть tpm
-[end] собрать всё из данного чрута или пресобрать вообще всё
-
-
-[doc] change profile, visudo
-[doc] install all instructions to после установки ос
-
-
-
-
-нужна build'ing farm в данном chroot environment'е
-написать для будущих поколений процесс бутстрапинга (в том числе про то, что tpm-upload требует конфига, а потому должен быть установлен в определённое место). что сборка без safinaskar.com не предусмотрена
-
-
-[end] срочно написать support util для выяснения принадлежности пакетам
-
-
-[doc] эта программа не настраивает систему под меня, в отличие от aslife. её можно запускать in the wild. у меня очень непредвзятый софт
-
-
-[doc] этот набор программ всё же довольно высокого качества
-
-
-
-
-
-[doc] tpm добавлен. не закончен лишь открытый файл tpm
-[doc] tpm-upload добавлен. не закончен лишь открытый файл tpm-upload
-[doc] tpm 2.0. по-хорошему нужен shell feature test, всех команд и их опций. сделать менеджер пакетов для sh. мол, этот пакет зависит от наличия такой-то команды в sh с такими-то опциями. нужен очень большой и сложный bootstrap, мои заменитили для отсутствующих утилит и так далее. нужен один и тот же менеджер пакетов, написанный на sh и си. sh - для не-linux окружений без компилятора (ну мало ли, где такая штука возникла). си - для всего остального. нужно разобраться, в каких окружениях какие команды и с какими опциями есть. нужно будет подумать о целях, которые я ставлю для tpm 2.0. нужна ли работоспособность без интернета? нужна ли работоспособность внутри минимального debootstrap'а или нет, т. к. в случае чего можно доустановить программы наружним dpkg? tpm 2.0. конфиг с большой буквы, чтоб его было видно. и чтоб шёл раньше CMakeLists.txt и прочих. можно пойти дальше в разделении tpm: сделать маленькую версию, которая не умеет удалять, а потому не требует tac и так далее. по-хорошему в каждой точке кода мы должны знать, каковы наши предположения (что мы не выполняемся в контексте curl | sh, что мы выполняемся там же, где находится установленный скрипт, что во время удаления себя скрипт не захочет зачем-то напоследок перезапустить себя и так далее и тому подобное). нужны strong exception safety гарантии, но для этого нужен другой язык, а не sh. видимо, желание сделать как можно меньше зависимостей погубило проект. завсисимости от ldd и тому подобных инструментов для проверок версий либ вполне нормальны, нужно было определиться с целями
-[end] showmegnulinux
-
-
-
-
-
-
-          | конвертнут | upload | install | git | выкл из dist.sh | из инсталяций
-tpm-hello | *          | *      | *       | *   | *               | *
-libsh     | *          | *      | *       | *   | *               | *
-
-rm dist.sh и много другого
-периодические проверки на то, что всё собирается
-дико отложенный reboot
-/dr/tmp/rm
-проверить, что с libsh линкуется
-one binary package design bug?
+:
