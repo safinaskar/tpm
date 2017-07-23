@@ -538,7 +538,7 @@ _target_build(){
 
 			_download "https://github.com/$PACKAGE/archive/master.tar.gz" "$TEMP/master.tar.gz"
 
-			( cd "$TEMP"; tar -xf master.tar.xz )
+			( cd "$TEMP"; tar -xf master.tar.gz )
 
 			local SRC="$TEMP/${PACKAGE##*/}-master"
 
