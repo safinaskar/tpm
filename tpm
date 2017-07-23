@@ -446,7 +446,7 @@ _target_install_package(){
 
 					_force_meta_wget
 
-					tpm_download "https://github.com/$PACKAGE/raw/master/tpm-control" "$TEMP/tpm-control"
+					tpm_download "https://github.com/$PACKAGE/raw/master/tpm-control" "$TEMP/tpm-control" true
 
 					if tpm_download "$REPO/$SYSTEM_ARCH/$PACKAGE.tar.gz" "$TEMP/package.tar.gz" false; then
 						_target_install_tarball "$TEMP/tpm-control" "$TEMP/package.tar.gz"
