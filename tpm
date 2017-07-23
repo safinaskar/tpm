@@ -439,7 +439,7 @@ _target_install_package(){
 
 				_target_read_config
 
-				TEMP="$(mktemp_directory)"
+				TEMP="$(tpm_mktemp_directory)"
 
 				(
 					trap "rm -r '$TEMP'" EXIT
@@ -494,7 +494,7 @@ _target_remove_native(){
 			done
 		)
 
-		TEMP="$(mktemp_directory)"
+		TEMP="$(tpm_mktemp_directory)"
 
 		(
 			trap "rm -r '$TEMP'" EXIT
@@ -540,7 +540,7 @@ _target_build(){
 		done
 
 		mkdir -p "$TARGET/tmp"
-		TEMP="$(mktemp_directory "$TARGET/tmp/tpm-XXXXXX")"
+		TEMP="$(tpm_mktemp_directory "$TARGET/tmp/tpm-XXXXXX")"
 
 		(
 			trap "rm -r '$TEMP'" EXIT
