@@ -260,9 +260,10 @@ _is_target_db(){
 }
 
 _is_target_native_installed(){
-	tpm_az "$1"
+	PACKAGE="$(tpm_anz "$1")"
+	tpm_az "$2"
 
-	[ -e "$TARGET/opt/tpm-store/var/lib/tpm/info/$1.list" ]
+	[ -e "$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list" ]
 }
 
 tpm_source(){
