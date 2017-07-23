@@ -38,6 +38,7 @@ tpm_assert tpm_is_command cd
 tpm_assert tpm_is_command printf
 tpm_assert tpm_is_command shift
 tpm_assert tpm_is_command eval
+tpm_assert tpm_is_command local
 
 tpm_assert tpm_is_command rm
 tpm_assert tpm_is_command mkdir
@@ -94,10 +95,12 @@ tpm_is_not(){
 }
 
 tpm_mktemp_directory(){
-	TEMPLATE="${1:-/tmp/tpm-XXXXXX}"
+	local TEMPLATE="${1:-/tmp/tpm-XXXXXX}"
 	tpm_az "$2"
 
 	tpm_assert tpm_is_command mktemp
+
+	local RESULT
 
 	while :; do
 		RESULT="$(mktemp "$TEMPLATE")"
@@ -114,7 +117,7 @@ TARGET=/bad-target # На всякий случай
 
 # Вызывать только в ситуации, когда мы уверены, что пакет не установлен
 _target_install_debian_package(){
-	PACKAGE="$(tpm_anz "$1")"
+	local PACKAGE="$(tpm_anz "$1")"
 	tpm_az "$2"
 
 	tpm_assert tpm_is_root
@@ -137,8 +140,8 @@ _target_install_debian_package(){
 }
 
 _target_install_prog_colon(){
-	COMMAND="$(tpm_anz "$1")"
-	PACKAGE="$(tpm_anz "$2")"
+	local COMMAND="$(tpm_anz "$1")"
+	local PACKAGE="$(tpm_anz "$2")"
 	tpm_az "$3"
 
 	_is_target_command "$COMMAND" && return
@@ -152,8 +155,8 @@ _target_install_prog_colon(){
 }
 
 _force_prog_colon(){
-	COMMAND="$(tpm_anz "$1")"
-	PACKAGE="$(tpm_anz "$2")"
+	local COMMAND="$(tpm_anz "$1")"
+	local PACKAGE="$(tpm_anz "$2")"
 	tpm_az "$3"
 
 	if ! tpm_is_command "$COMMAND"; then
@@ -205,9 +208,9 @@ _force_meta_wget(){
 
 # Исключение из правила: должно работать корректно даже в if'е
 tpm_download(){
-	URL="$(tpm_anz "$1")"
-	OUTPUT="$(tpm_anz "$2")"
-	FORCE="$(tpm_abool "$3")"
+	local URL="$(tpm_anz "$1")"
+	local OUTPUT="$(tpm_anz "$2")"
+	local FORCE="$(tpm_abool "$3")"
 	tpm_az "$4"
 
 	tpm_assert tpm_is_command mktemp
@@ -216,7 +219,7 @@ tpm_download(){
 
 	printf '%s' "Downloading $URL... "
 
-	WGET_OUTPUT="$(mktemp /tmp/tpm-wget-output-XXXXXX)"
+	local WGET_OUTPUT="$(mktemp /tmp/tpm-wget-output-XXXXXX)"
 
 	(
 		trap "rm '$WGET_OUTPUT'" EXIT
@@ -237,8 +240,8 @@ tpm_download(){
 }
 
 _download(){
-	URL="$(tpm_anz "$1")"
-	OUTPUT="$(tpm_anz "$2")"
+	local URL="$(tpm_anz "$1")"
+	local OUTPUT="$(tpm_anz "$2")"
 	tpm_az
 
 	_force_meta_wget
@@ -260,14 +263,14 @@ _is_target_db(){
 }
 
 _is_target_native_installed(){
-	PACKAGE="$(tpm_anz "$1")"
+	local PACKAGE="$(tpm_anz "$1")"
 	tpm_az "$2"
 
 	[ -e "$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list" ]
 }
 
 tpm_source(){
-	SCRIPT="$(tpm_anz "$1")"
+	local SCRIPT="$(tpm_anz "$1")"
 	tpm_az "$2"
 
 	[ "${SCRIPT#/}" = "$SCRIPT" ] && . "$PWD/$SCRIPT" || . "$SCRIPT"
@@ -275,7 +278,7 @@ tpm_source(){
 }
 
 _is_target_command(){
-	COMMAND="$(tpm_anz "$1")"
+	local COMMAND="$(tpm_anz "$1")"
 	tpm_az "$2"
 
 	tpm_assert tpm_is_command chroot
@@ -290,8 +293,8 @@ _target_read_config(){
 }
 
 _target_install_tarball(){
-	CONTROL="$(tpm_anz "$1")"
-	TARBALL="$(tpm_anz "$2")"
+	local CONTROL="$(tpm_anz "$1")"
+	local TARBALL="$(tpm_anz "$2")"
 	tpm_az "$3"
 
 	tpm_assert tpm_is_root
@@ -320,7 +323,7 @@ _target_install_tarball(){
 
 	mkdir -p "$TARGET/opt/tpm-store/var/lib/tpm/info/${PACKAGE%/*}"
 
-	TEMP="$(tpm_mktemp_directory)"
+	local TEMP="$(tpm_mktemp_directory)"
 
 	(
 		trap "rm -r '$TEMP'" EXIT
@@ -354,7 +357,7 @@ _target_install_tarball(){
 }
 
 _target_install_package(){
-		PACKAGE="$(tpm_anz "$1")"
+		local PACKAGE="$(tpm_anz "$1")"
 		tpm_az "$2"
 
 		tpm_assert tpm_is_root
@@ -363,9 +366,9 @@ _target_install_package(){
 
 		case "$PACKAGE" in
 			prog:*)
-				PACKAGE_SUFFIX="${PACKAGE#prog:}"
-				COMMAND="${PACKAGE_SUFFIX%%:*}"
-				DEBIAN_PACKAGE="${PACKAGE_SUFFIX#*:}"
+				local PACKAGE_SUFFIX="${PACKAGE#prog:}"
+				local COMMAND="${PACKAGE_SUFFIX%%:*}"
+				local DEBIAN_PACKAGE="${PACKAGE_SUFFIX#*:}"
 
 				_target_install_prog_colon "$COMMAND" "$DEBIAN_PACKAGE"
 				;;
@@ -375,10 +378,10 @@ _target_install_package(){
 				;;
 
 			lib:*)
-				PACKAGE_SUFFIX="${PACKAGE#lib:}"
-				LIBRARY="${PACKAGE_SUFFIX%%:*}"
+				local PACKAGE_SUFFIX="${PACKAGE#lib:}"
+				local LIBRARY="${PACKAGE_SUFFIX%%:*}"
 				PACKAGE_SUFFIX="${PACKAGE_SUFFIX#*:}"
-				VERSION="${PACKAGE_SUFFIX%%:*}"
+				local VERSION="${PACKAGE_SUFFIX%%:*}"
 
 				_target_read_config
 
@@ -403,11 +406,12 @@ _target_install_package(){
 				;;
 
 			libdev:*)
-				PACKAGE_SUFFIX="${PACKAGE#libdev:}"
-				LIBRARY="${PACKAGE_SUFFIX%%:*}"
+				local PACKAGE_SUFFIX="${PACKAGE#libdev:}"
+				local LIBRARY="${PACKAGE_SUFFIX%%:*}"
 				PACKAGE_SUFFIX="${PACKAGE_SUFFIX#*:}"
-				VERSION="${PACKAGE_SUFFIX%%:*}"
+				local VERSION="${PACKAGE_SUFFIX%%:*}"
 
+				local DEBIAN_PACKAGE
 				if [ "$VERSION" = "$PACKAGE_SUFFIX" ]; then
 					DEBIAN_PACKAGE="$LIBRARY$VERSION-dev"
 				else
@@ -439,7 +443,7 @@ _target_install_package(){
 
 				_target_read_config
 
-				TEMP="$(tpm_mktemp_directory)"
+				local TEMP="$(tpm_mktemp_directory)"
 
 				(
 					trap "rm -r '$TEMP'" EXIT
@@ -471,7 +475,7 @@ _target_install_package(){
 }
 
 _target_remove_native(){
-		PACKAGE="$(tpm_anz "$1")"
+		local PACKAGE="$(tpm_anz "$1")"
 		tpm_az "$2"
 
 		tpm_assert tpm_is_root
@@ -482,7 +486,7 @@ _target_remove_native(){
 		tpm_assert _is_target_native_installed "$PACKAGE"
 
 		(
-			OLD_PWD="$PWD"
+			local OLD_PWD="$PWD"
 			cd "$TARGET/opt/tpm-store/var/lib/tpm/info"
 
 			for I in */*.control; do
@@ -494,7 +498,7 @@ _target_remove_native(){
 			done
 		)
 
-		TEMP="$(tpm_mktemp_directory)"
+		local TEMP="$(tpm_mktemp_directory)"
 
 		(
 			trap "rm -r '$TEMP'" EXIT
@@ -516,8 +520,8 @@ _target_remove_native(){
 }
 
 _target_build(){
-		SRC="$(tpm_anz "$1")"
-		OUTPUT="$(tpm_anz "$2")"
+		local SRC="$(tpm_anz "$1")"
+		local OUTPUT="$(tpm_anz "$2")"
 		tpm_az "$3"
 
 		tpm_assert tpm_is_root
@@ -540,12 +544,12 @@ _target_build(){
 		done
 
 		mkdir -p "$TARGET/tmp"
-		TEMP="$(tpm_mktemp_directory "$TARGET/tmp/tpm-XXXXXX")"
+		local TEMP="$(tpm_mktemp_directory "$TARGET/tmp/tpm-XXXXXX")"
 
 		(
 			trap "rm -r '$TEMP'" EXIT
 
-			INTERNAL_TEMP="/tmp/${TEMP##*/}"
+			local INTERNAL_TEMP="/tmp/${TEMP##*/}"
 
 			cp -r "$SRC" "$TEMP/src"
 
@@ -571,9 +575,11 @@ _target_init(){
 
 		[ -e "$TARGET/opt/tpm-store" ] && echo "${0##*/}: already initialized" >&2 && exit 1
 
-		TEMP="$(tpm_mktemp_directory)"
+		local TEMP="$(tpm_mktemp_directory)"
 
-		(
+		local ARCH="$(
+			set -e
+
 			trap "rm -r '$TEMP'" EXIT
 
 			if chroot "$TARGET" cc -v 2> "$TEMP/cc"; then
@@ -600,7 +606,9 @@ _target_init(){
 					ARCH="$(cat "$TEMP/arch")"
 				)
 			fi
-		)
+
+			printf '%s\n' "$ARCH"
+		)"
 
 		echo "Initializing"
 
