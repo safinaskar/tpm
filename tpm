@@ -460,14 +460,7 @@ _target_install_package(){
 					elif tpm_download "$REPO/all/$PACKAGE.tar.gz" "$TEMP/package.tar.gz" false; then
 						_target_install_tarball "$TEMP/tpm-control" "$TEMP/package.tar.gz"
 					else
-						_force_prog_colon tar tar
-						_force_prog_colon gzip gzip
-
-						tpm_download "https://github.com/$PACKAGE/archive/master.tar.gz" "$TEMP/master.tar.gz" true
-
-						( cd "$TEMP"; tar -xzf "$TEMP/master.tar.gz" )
-
-						_target_build "$TEMP/${PACKAGE##*/}-master" "$TEMP/package.tar.gz"
+						_target_build "$PACKAGE" "$TEMP/package.tar.gz"
 
 						_target_install_tarball "$TEMP/tpm-control" "$TEMP/package.tar.gz"
 					fi
@@ -523,7 +516,7 @@ _target_remove_native(){
 }
 
 _target_build(){
-		local SRC="$(tpm_anz "$1")"
+		local PACKAGE="$(tpm_anz "$1")"
 		local OUTPUT="$(tpm_anz "$2")"
 		tpm_az "$3"
 
@@ -536,31 +529,36 @@ _target_build(){
 
 		tpm_assert _is_target_db
 
-		tpm_source tpm-control
-
-		for I in $DEPENDS $BUILD_DEPENDS; do
-			_target_install_package "$I"
-		done
-
-		for I in $LIBS; do
-			_target_install_package "libdev:$I"
-		done
-
 		mkdir -p "$TARGET/tmp"
+
 		local TEMP="$(tpm_mktemp_directory "$TARGET/tmp/tpm-XXXXXX")"
 
 		(
 			trap "rm -r '$TEMP'" EXIT
 
-			local INTERNAL_TEMP="/tmp/${TEMP##*/}"
+			_download "https://github.com/$PACKAGE/archive/master.tar.gz" "$TEMP/master.tar.gz"
 
-			cp -r "$SRC" "$TEMP/src"
+			( cd "$TEMP"; tar -xf master.tar.xz )
+
+			local SRC="$TEMP/${PACKAGE##*/}-master"
+
+			tpm_source "$SRC/tpm-control"
+
+			for I in $DEPENDS $BUILD_DEPENDS; do
+				_target_install_package "$I"
+			done
+
+			for I in $LIBS; do
+				_target_install_package "libdev:$I"
+			done
+
+			local INTERNAL_TEMP="/tmp/${TEMP##*/}"
 
 			# Скрипту сборки можно опираться на то, что существует пустая папка под названием $BUILD, которая потом будет автоматически удалена. И что папка с сорцами лежит в $SRC
 			mkdir "$TEMP/build"
 
 			# Мы вынуждены патчить ещё и CFLAGS и CXXFLAGS, т. к. cmake игнорирует CPPFLAGS
-			PREFIX=/opt/tpm-store DESTDIR="$INTERNAL_TEMP/destdir" SRC="$INTERNAL_TEMP/src" BUILD="$INTERNAL_TEMP/build" CPPFLAGS="$CPPFLAGS -I/opt/tpm-store/include" CFLAGS="$CFLAGS -I/opt/tpm-store/include" CXXFLAGS="$CXXFLAGS -I/opt/tpm-store/include" LDFLAGS="$LDFLAGS -L/opt/tpm-store/lib" chroot "$TARGET" sh -c "cd \"\$SRC\" || exit 1; $INSTALL"
+			PREFIX=/opt/tpm-store DESTDIR="$INTERNAL_TEMP/destdir" SRC="$INTERNAL_TEMP/${PACKAGE##*/}-master" BUILD="$INTERNAL_TEMP/build" CPPFLAGS="$CPPFLAGS -I/opt/tpm-store/include" CFLAGS="$CFLAGS -I/opt/tpm-store/include" CXXFLAGS="$CXXFLAGS -I/opt/tpm-store/include" LDFLAGS="$LDFLAGS -L/opt/tpm-store/lib" chroot "$TARGET" sh -c "cd \"\$SRC\" || exit 1; $INSTALL"
 
 			( cd "$TEMP/destdir"; tar --numeric-owner -cz . ) > "$OUTPUT"
 		)
@@ -696,11 +694,12 @@ case "$1" in
 
 	build)
 		eval "$EAT_TARGET"
-		tpm_ueq "$1" "-o"
-		OUTPUT="$(tpm_unz "$2")"
-		tpm_uz "$3"
+		PACKAGE="$(tpm_unz "$1")"
+		tpm_ueq "$2" "-o"
+		OUTPUT="$(tpm_unz "$3")"
+		tpm_uz "$4"
 
-		_target_build . "$OUTPUT"
+		_target_build "$PACKAGE" "$OUTPUT"
 		;;
 
 	bootstrap)
@@ -712,17 +711,21 @@ case "$1" in
 		_target_install_package safinaskar/tpm
 		;;
 
-	upgrade-tpm)
-		eval "$EAT_TARGET"
-		tpm_uz "$1"
+	upgrade)
+		# Можно обновлять себя
 
-		# HARD
+		eval "$EAT_TARGET"
+		PACKAGE="$(tpm_unz "$1")"
+		tpm_uz "$2"
+
 		tpm_assert tpm_is_root
-		_target_remove_native safinaskar/tpm
-		_target_install_package safinaskar/tpm
+		_target_remove_native "$PACKAGE"
+		_target_install_package "$PACKAGE"
 		;;
 
 	shlib)
+		tpm_uz "$2"
+
 		echo /opt/tpm-store/bin/tpm
 		;;
 
