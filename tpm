@@ -694,7 +694,7 @@ case "$1" in
 	build)
 		eval "$EAT_TARGET"
 		tpm_ueq "$1" "-o"
-		OUTPUT="(tpm_unz "$2")"
+		OUTPUT="$(tpm_unz "$2")"
 		tpm_uz "$3"
 
 		_target_build . "$OUTPUT"
