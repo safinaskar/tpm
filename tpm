@@ -651,8 +651,8 @@ case "$1" in
 
 	install-tarball)
 		eval "$EAT_TARGET"
-		CONTROL="$(tpm_unz "$1")
-		TARBALL="$(tpm_unz "$2")
+		CONTROL="$(tpm_unz "$1")"
+		TARBALL="$(tpm_unz "$2")"
 		tpm_uz "$3"
 
 		_target_install_tarball "$CONTROL" "$TARBALL"
@@ -660,7 +660,7 @@ case "$1" in
 
 	install)
 		eval "$EAT_TARGET"
-		PACKAGE="$(tpm_unz "$1")
+		PACKAGE="$(tpm_unz "$1")"
 		tpm_uz "$2"
 
 		_target_install_package "$PACKAGE"
@@ -668,7 +668,7 @@ case "$1" in
 
 	remove)
 		eval "$EAT_TARGET"
-		PACKAGE="$(tpm_unz "$1")
+		PACKAGE="$(tpm_unz "$1")"
 		tpm_uz "$2"
 
 		_target_remove_native "$PACKAGE"
