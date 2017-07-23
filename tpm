@@ -172,7 +172,8 @@ _force_prog_colon(){
 tpm_is_wget_working(){
 	tpm_az "$1"
 
-	wget -O /dev/null https://github.com 2> /dev/null
+	# github.com may ban us for too many requests
+	wget -O /dev/null https://google.com 2> /dev/null
 }
 
 _target_install_meta_wget(){
@@ -180,12 +181,12 @@ _target_install_meta_wget(){
 
 	_target_install_prog_colon wget wget
 
-	chroot "$TARGET" wget -O /dev/null https://github.com 2> /dev/null && return
+	chroot "$TARGET" wget -O /dev/null https://google.com 2> /dev/null && return
 
 	_target_install_debian_package ca-certificates
 
-	if ! chroot "$TARGET" wget -O /dev/null https://github.com; then
-		echo "${0##*/}: we just installed ca-certificates, but still cannot download https://github.com, possible reasons: no internet connection, DNS problems, https://github.com is down" >&2
+	if ! chroot "$TARGET" wget -O /dev/null https://google.com; then
+		echo "${0##*/}: we just installed ca-certificates, but still cannot download https://google.com, possible reasons: no internet connection, DNS problems, https://google.com is down, google.com banned us for too many requests" >&2
 		exit 1
 	fi
 }
@@ -195,10 +196,10 @@ _force_meta_wget(){
 
 	_force_prog_colon wget wget
 
-	if ! wget -O /dev/null https://github.com 2> /dev/null; then
+	if ! wget -O /dev/null https://google.com 2> /dev/null; then
 		if [ "$TARGET" != / ]; then
-			wget -O /dev/null https://github.com
-			echo "${0##*/}: cannot download https://github.com, possible reason: no certificates on the system, and target is not /, so we will not install the certificates" >&2
+			wget -O /dev/null https://google.com
+			echo "${0##*/}: cannot download https://google.com, possible reason: no certificates on the system, and target is not /, so we will not install the certificates" >&2
 			exit 1
 		fi
 
