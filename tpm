@@ -644,7 +644,7 @@ EOF
 Defaults secure_path="/opt/tpm-store/sbin:/opt/tpm-store/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 EOF
 
-		chroot "$TARGET" ldconfig
+		chroot "$TARGET" ldconfig 2> /dev/null || :
 }
 
 usage(){
@@ -752,7 +752,7 @@ case "$1" in
 
 		rm -f "$TARGET/etc/ld.so.conf.d/tpm.conf" "$TARGET/etc/profile.d/tpm.sh" "$TARGET/etc/sudoers.d/tpm"
 		rm -r "$TARGET/opt/tpm-store"
-		chroot "$TARGET" ldconfig
+		chroot "$TARGET" ldconfig 2> /dev/null || :
 		;;
 
 	shlib)
