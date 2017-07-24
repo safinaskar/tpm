@@ -206,7 +206,7 @@ _force_meta_wget(){
 	fi
 }
 
-# Исключение из правила: должно работать корректно даже в if'е
+>>>># Исключение из правила: должно работать корректно даже в if'е
 tpm_download(){
 	local URL="$(tpm_anz "$1")"
 	local OUTPUT="$(tpm_anz "$2")"
@@ -578,9 +578,7 @@ _target_init(){
 
 		local TEMP="$(tpm_mktemp_directory)"
 
-		local ARCH="$(
-			set -e
-
+		(
 			trap "rm -r '$TEMP'" EXIT
 
 			if chroot "$TARGET" cc -v 2> "$TEMP/cc"; then
@@ -601,30 +599,29 @@ _target_init(){
 
 					chroot "$TARGET" sh "${CONFIG_GUESS##*/}" > "$TEMP/arch"
 
+					echo "${0##*/}: warning: config.guess guessed this arch: $(cat "$TEMP/arch"), it may be inaccurate, especially if host and target arch differ" >&2
+
 					case "$(cat "$TEMP/arch")" in
 						x86_64-linux-gnu|x86_64-pc-linux-gnu)
 							ARCH="x86_64-linux-gnu"
 							;;
 						*)
-							echo "${0##*/}: warning: config.guess guessed this arch: $(cat "$TEMP/arch"), it may be inaccurate, especially if host and target arch differ" >&2
 							ARCH="$(cat "$TEMP/arch")"
 							;;
 					esac
 				)
 			fi
 
-			printf '%s\n' "$ARCH"
-		)"
+			echo "Initializing"
 
-		echo "Initializing"
+			mkdir -p "$TARGET/opt/tpm-store/etc"
 
-		mkdir -p "$TARGET/opt/tpm-store/etc"
-
-		# HARD
-		cat << EOF > "$TARGET/opt/tpm-store/etc/tpm.conf"
+			# HARD
+			cat << EOF > "$TARGET/opt/tpm-store/etc/tpm.conf"
 SYSTEM_ARCH="$ARCH"
 REPO="http://safinaskar.com/tpm"
 EOF
+		)
 
 		mkdir -p "$TARGET/opt/tpm-store/var/lib/tpm/info"
 
