@@ -742,8 +742,16 @@ case "$1" in
 
 	deinit)
 		eval "$EAT_TARGET"
+		tpm_uz "$1"
 
-		rm -f
+		tpm_assert tpm_is_root
+
+		tpm_assert _is_target_db
+
+		rm -f "$TARGET/etc/ld.so.conf.d/tpm.conf" "$TARGET/etc/profile.d/tpm.sh" "$TARGET/etc/sudoers.d/tpm"
+		rm -r "$TARGET/opt/tpm-store"
+		;;
+
 	shlib)
 		tpm_uz "$2"
 
@@ -751,6 +759,7 @@ case "$1" in
 		;;
 
 	_shlib)
+		:
 		;;
 
 	*)
