@@ -599,8 +599,6 @@ _target_init(){
 
 					chroot "$TARGET" sh "${CONFIG_GUESS##*/}" > "$TEMP/arch"
 
-					echo "${0##*/}: warning: config.guess guessed this arch: $(cat "$TEMP/arch"), it may be inaccurate, especially if host and target arch differ" >&2
-
 					case "$(cat "$TEMP/arch")" in
 						x86_64-linux-gnu|x86_64-pc-linux-gnu)
 							ARCH="x86_64-linux-gnu"
@@ -609,6 +607,8 @@ _target_init(){
 							ARCH="$(cat "$TEMP/arch")"
 							;;
 					esac
+
+					echo "${0##*/}: warning: we will use this arch: $(cat "$TEMP/arch") (based on config.guess), it may be inaccurate, especially if host and target arch differ" >&2
 				)
 			fi
 
