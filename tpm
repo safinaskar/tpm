@@ -328,7 +328,7 @@ _target_install_tarball(){
 	(
 		trap "rm -r '$TEMP'" EXIT
 
-		( cd "$TARGET"; tar --numeric-owner -xzv ) < "$TARBALL" > "$TEMP/list"
+		( cd "$TARGET"; tar -xzv ) < "$TARBALL" > "$TEMP/list"
 
 		sed -e 's/^\.//' -e 's~^/$~/.~' -e 's~/$~~' "$TEMP/list" > "$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list"
 
@@ -560,7 +560,7 @@ _target_build(){
 			# Мы вынуждены патчить ещё и CFLAGS и CXXFLAGS, т. к. cmake игнорирует CPPFLAGS
 			PREFIX=/opt/tpm-store DESTDIR="$INTERNAL_TEMP/destdir" SRC="$INTERNAL_TEMP/${PACKAGE##*/}-master" BUILD="$INTERNAL_TEMP/build" CPPFLAGS="$CPPFLAGS -I/opt/tpm-store/include" CFLAGS="$CFLAGS -I/opt/tpm-store/include" CXXFLAGS="$CXXFLAGS -I/opt/tpm-store/include" LDFLAGS="$LDFLAGS -L/opt/tpm-store/lib" chroot "$TARGET" sh -c "cd \"\$SRC\" || exit 1; $INSTALL"
 
-			( cd "$TEMP/destdir"; tar --numeric-owner -cz . ) > "$OUTPUT"
+			( cd "$TEMP/destdir"; tar -cz . ) > "$OUTPUT"
 		)
 }
 
