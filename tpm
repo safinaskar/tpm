@@ -330,6 +330,8 @@ _target_install_tarball(){
 
 		( cd "$TARGET"; tar -xzv ) < "$TARBALL" > "$TEMP/list"
 
+		chroot "$TARGET" ldconfig 2> /dev/null || :
+
 		sed -e 's/^\.//' -e 's~^/$~/.~' -e 's~/$~~' "$TEMP/list" > "$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list"
 
 		# Делаем cat'ом, чтобы файл создался с нужными правами и владельцем
@@ -646,8 +648,6 @@ EOF
 		cat << EOF > "$TARGET/etc/sudoers.d/tpm"
 Defaults secure_path="/opt/tpm-store/sbin:/opt/tpm-store/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 EOF
-
-		chroot "$TARGET" ldconfig 2> /dev/null || :
 }
 
 usage(){
@@ -753,9 +753,10 @@ case "$1" in
 
 		tpm_assert _is_target_db
 
+		echo "Deinitializing"
+
 		rm -f "$TARGET/etc/ld.so.conf.d/tpm.conf" "$TARGET/etc/profile.d/tpm.sh" "$TARGET/etc/sudoers.d/tpm"
 		rm -r "$TARGET/opt/tpm-store"
-		chroot "$TARGET" ldconfig 2> /dev/null || :
 		;;
 
 	shlib)
