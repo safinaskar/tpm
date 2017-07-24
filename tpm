@@ -608,7 +608,7 @@ _target_init(){
 							;;
 					esac
 
-					echo "${0##*/}: warning: we will use this arch: $(cat "$TEMP/arch") (based on config.guess), it may be inaccurate, especially if host and target arch differ" >&2
+					echo "${0##*/}: warning: we will use this arch: $ARCH (based on config.guess), it may be inaccurate, especially if host and target arch differ" >&2
 				)
 			fi
 
