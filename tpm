@@ -639,10 +639,6 @@ EOF
 EAT_TARGET='shift; case "$1" in --root=*) TARGET="${1#--root=}"; shift;; *) TARGET=/;; esac; :'
 
 case "$1" in
-	"")
-		# OK, somebody use us as a shell library
-		;;
-
 	init)
 		eval "$EAT_TARGET"
 		tpm_uz "$1"
@@ -726,7 +722,10 @@ case "$1" in
 	shlib)
 		tpm_uz "$2"
 
-		echo /opt/tpm-store/bin/tpm
+		printf '%s\n' 'set -- _shlib "$@"; . /opt/tpm-store/bin/tpm; shift'
+		;;
+
+	_shlib)
 		;;
 
 	*)
