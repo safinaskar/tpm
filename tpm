@@ -302,7 +302,7 @@ _target_install_tarball(){
 	tpm_assert tpm_is_command chroot
 
 	_force_prog_colon tar tar
-	_force_prog_colon gzip gzip
+	_force_prog_colon gunzip gzip
 	_force_prog_colon sed sed
 
 	tpm_assert _is_target_db
@@ -525,7 +525,7 @@ _target_build(){
 		tpm_assert tpm_is_command chroot
 
 		_force_prog_colon tar tar
-		_force_prog_colon gzip gzip
+		_force_prog_colon gunzip gzip
 
 		tpm_assert _is_target_db
 
@@ -601,9 +601,15 @@ _target_init(){
 
 					chroot "$TARGET" sh "${CONFIG_GUESS##*/}" > "$TEMP/arch"
 
-					echo "${0##*/}: warning: config.guess guessed this arch: $(cat "$TEMP/arch"), it may be inaccurate, especially if host and target arch differ" >&2
-
-					ARCH="$(cat "$TEMP/arch")"
+					case "$(cat "$TEMP/arch")" in
+						x86_64-linux-gnu|x86_64-pc-linux-gnu)
+							ARCH="x86_64-linux-gnu"
+							;;
+						*)
+							echo "${0##*/}: warning: config.guess guessed this arch: $(cat "$TEMP/arch"), it may be inaccurate, especially if host and target arch differ" >&2
+							ARCH="$(cat "$TEMP/arch")"
+							;;
+					esac
 				)
 			fi
 
