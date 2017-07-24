@@ -621,6 +621,28 @@ REPO="http://safinaskar.com/tpm"
 EOF
 
 		mkdir -p "$TARGET/opt/tpm-store/var/lib/tpm/info"
+
+		mkdir -p "$TARGET/etc/ld.so.conf.d"
+
+		cat << EOF > "$TARGET/etc/ld.so.conf.d/tpm.conf"
+/opt/tpm-store/lib
+EOF
+
+		mkdir -p "$TARGET/etc/profile.d"
+
+		cat << "EOF" > "$TARGET/etc/profile.d/tpm.sh"
+if [ "$(id -u)" = 0 ]; then
+	export PATH="/opt/tpm-store/sbin:/opt/tpm-store/bin:$PATH"
+else
+	export PATH="/opt/tpm-store/bin:$PATH"
+fi
+EOF
+
+		mkdir -p "$TARGET/etc/sudoers.d"
+
+		cat << EOF > "$TARGET/etc/sudoers.d/tpm"
+Defaults secure_path="/opt/tpm-store/sbin:/opt/tpm-store/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+EOF
 }
 
 usage(){
@@ -718,6 +740,10 @@ case "$1" in
 		_target_install_package "$PACKAGE"
 		;;
 
+	deinit)
+		eval "$EAT_TARGET"
+
+		rm -f
 	shlib)
 		tpm_uz "$2"
 
