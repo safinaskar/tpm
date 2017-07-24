@@ -72,7 +72,6 @@ tpm_abool(){
 			exit 1
 			;;
 	esac
-	:
 }
 
 tpm_unz(){
@@ -467,7 +466,6 @@ _target_install_package(){
 				)
 				;;
 		esac
-		:
 }
 
 _target_remove_native(){
@@ -490,6 +488,7 @@ _target_remove_native(){
 
 				for J in $DEPENDS; do
 					[ "$J" = "$PACKAGE" ] && ( cd "$OLD_PWD"; _target_remove_native "${I%.control}" )
+					:
 				done
 			done
 		)
@@ -506,6 +505,7 @@ _target_remove_native(){
 			while IFS="" read -r FILE; do
 				if [ -d "$TARGET$FILE" ]; then
 					rmdir "$TARGET$FILE" 2> /dev/null || :
+					:
 				else
 					rm -f "$FILE"
 				fi
@@ -590,7 +590,6 @@ _target_init(){
 							ARCH="${LINE#Target: }"
 							;;
 					esac
-					:
 				done < "$TEMP/cc"
 			else
 				CONFIG_GUESS="$(mktemp "$TARGET/tpm-config.guess-XXXXXX")"
@@ -636,7 +635,7 @@ EOF
 	exit 1
 }
 
-EAT_TARGET='shift; case "$1" in --root=*) TARGET="${1#--root=}"; shift;; *) TARGET=/;; esac; :'
+EAT_TARGET='shift; case "$1" in --root=*) TARGET="${1#--root=}"; shift;; *) TARGET=/;; esac'
 
 case "$1" in
 	init)
@@ -732,4 +731,3 @@ case "$1" in
 		usage
 		;;
 esac
-:
