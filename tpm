@@ -590,7 +590,7 @@ _target_build(){
 			mkdir "$TARGET$BUILD"
 
 			export DESTDIR="$TEMP/destdir"
-			export INFO="$DESTDIR/opt/tpm-store/var/lib/tpm/${PACKAGE%/*}"
+			export INFO="$DESTDIR/opt/tpm-store/var/lib/tpm/info/${PACKAGE%/*}"
 
 			mkdir -p "$TARGET$INFO"
 
