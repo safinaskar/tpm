@@ -563,18 +563,19 @@ _target_build(){
 
 		mkdir -p "$TARGET/tmp"
 
-		local TEMP="$(tpm_mktemp_directory "$TARGET/tmp/tpm-XXXXXX")"
+		local OUTSIDE_TEMP="$(tpm_mktemp_directory "$TARGET/tmp/tpm-XXXXXX")"
+		local TEMP="/tmp/${OUTSIDE_TEMP##*/}"
 
 		(
-			trap "rm -r '$TEMP'" EXIT
+			trap "rm -r '$TARGET$TEMP'" EXIT
 
-			_download "https://github.com/$PACKAGE/archive/master.tar.gz" "$TEMP/master.tar.gz"
+			_download "https://github.com/$PACKAGE/archive/master.tar.gz" "$TARGET$TEMP/master.tar.gz"
 
-			( cd "$TEMP"; tar -xf master.tar.gz )
+			( cd "$TARGET$TEMP"; tar -xf master.tar.gz )
 
-			local SRC="$TEMP/${PACKAGE##*/}-master"
+			export SRC="$TEMP/${PACKAGE##*/}-master"
 
-			tpm_source "$SRC/tpm-control"
+			tpm_source "$TARGET$SRC/tpm-control"
 
 			for I in $DEPENDS $BUILD_DEPENDS; do
 				_target_install_package "$I"
@@ -584,15 +585,19 @@ _target_build(){
 				_target_install_package "libdev:$I"
 			done
 
-			local INTERNAL_TEMP="/tmp/${TEMP##*/}"
-
 			# Скрипту сборки можно опираться на то, что существует пустая папка под названием $BUILD, которая потом будет автоматически удалена. И что папка с сорцами лежит в $SRC
-			mkdir "$TEMP/build"
+			export BUILD="$TEMP/build"
+			mkdir "$TARGET$BUILD"
+
+			export DESTDIR="$TEMP/destdir"
+			export INFO="$DESTDIR/opt/tpm-store/var/lib/tpm/${PACKAGE%/*}"
+
+			mkdir -p "$TARGET$INFO"
 
 			# Мы вынуждены патчить ещё и CFLAGS и CXXFLAGS, т. к. cmake игнорирует CPPFLAGS
-			PREFIX=/opt/tpm-store DESTDIR="$INTERNAL_TEMP/destdir" SRC="$INTERNAL_TEMP/${PACKAGE##*/}-master" BUILD="$INTERNAL_TEMP/build" INFO="/opt/tpm-store/var/lib/tpm/${PACKAGE%/*}" CPPFLAGS="$CPPFLAGS -I/opt/tpm-store/include" CFLAGS="$CFLAGS -I/opt/tpm-store/include" CXXFLAGS="$CXXFLAGS -I/opt/tpm-store/include" LDFLAGS="$LDFLAGS -L/opt/tpm-store/lib" chroot "$TARGET" sh -c "cd \"\$SRC\" || exit 1; $INSTALL"
+			PREFIX=/opt/tpm-store CPPFLAGS="$CPPFLAGS -I/opt/tpm-store/include" CFLAGS="$CFLAGS -I/opt/tpm-store/include" CXXFLAGS="$CXXFLAGS -I/opt/tpm-store/include" LDFLAGS="$LDFLAGS -L/opt/tpm-store/lib" chroot "$TARGET" sh -c "cd \"\$SRC\" || exit 1; $INSTALL"
 
-			( cd "$TEMP/destdir"; tar -cz . ) > "$OUTPUT"
+			( cd "$TARGET$DESTDIR"; tar -cz . ) > "$OUTPUT"
 		)
 }
 
