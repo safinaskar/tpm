@@ -2,6 +2,9 @@
 
 # Не имеет права перезапускать себя, т. к. может быть запущен через, скажем, curl | sh. Нельзя использовать $0, кроме как для вывода сообщений об ошибках. Не может опираться даже на базовые предположения, которые считаются верными для всех остальных программ, устанавливаемых через tpm. Этот скрипт умеет работать с системами, находящимися в chroot-окружениях
 
+TPM_AVAILABLE_BINARIES="[ basename cat chmod chown cp cut date dd df dirname echo env expr false head id ln ls mkdir mv printf pwd rm rmdir sh sleep sort tail test touch tr true tty uname uniq wc"
+TPM_AVAILABLE_COMMANDS=": . bg break cd command continue eval exec exit export fg getopts hash jobs kill local read readonly return set shift times trap type ulimit umask unset wait"
+
 # Предполагаем, что echo и exit есть
 
 # Доступна внутренняя или внешняя команда
@@ -603,15 +606,14 @@ _target_init(){
 
 					case "$(cat "$TEMP/arch")" in
 						x86_64-linux-gnu|x86_64-pc-linux-gnu)
-							ARCH="x86_64-linux-gnu"
-							;;
-						*)
-							ARCH="$(cat "$TEMP/arch")"
+							echo "x86_64-linux-gnu" > "$TEMP/arch"
 							;;
 					esac
 
-					echo "${0##*/}: warning: we will use this arch: $ARCH (based on config.guess), it may be inaccurate, especially if host and target arch differ" >&2
+					echo "${0##*/}: warning: we will use this arch: $(cat "$TEMP/arch") (based on config.guess), it may be inaccurate, especially if host and target arch differ" >&2
 				)
+
+				ARCH="$(cat "$TEMP/arch")"
 			fi
 
 			echo "Initializing"
@@ -767,6 +769,17 @@ case "$1" in
 
 	_shlib)
 		:
+		;;
+
+	check-commands)
+		# Проверяет список захардкоженных команд на хосте и больше ничего не делает
+		tpm_uz "$2"
+
+		for I in $TPM_AVAILABLE_BINARIES $TPM_AVAILABLE_COMMANDS; do
+			if ! type "$I" > /dev/null 2>&1; then
+				echo "${0##*/}: no command \"$I\"" >&2
+			fi
+		done
 		;;
 
 	*)
