@@ -2,6 +2,8 @@
 
 # Не имеет права перезапускать себя, т. к. может быть запущен через, скажем, curl | sh. Нельзя использовать $0, кроме как для вывода сообщений об ошибках. Не может опираться даже на базовые предположения, которые считаются верными для всех остальных программ, устанавливаемых через tpm. Этот скрипт умеет работать с системами, находящимися в chroot-окружениях
 
+# Везде у wget указывается опция -O, иначе скачивание wget http://example.com/package.`.gz будет вести себя неожидаемым образом, если package.tar.gz уже есть
+
 TPM_AVAILABLE_BINARIES="[ basename cat chmod chown cp cut date dd df dirname echo env expr false head id ln ls mkdir mv printf pwd rm rmdir sh sleep sort tail test touch tr true tty uname uniq wc"
 TPM_AVAILABLE_COMMANDS=": . bg break cd command continue eval exec exit export fg getopts hash jobs kill local read readonly return set shift times trap type ulimit umask unset wait"
 
@@ -187,7 +189,8 @@ _target_install_meta_wget(){
 
 	_target_install_debian_package ca-certificates
 
-	if ! chroot "$TARGET" wget -O /dev/null https://google.com; then
+	if ! chroot "$TARGET" wget -O /dev/null https://google.com 2> /dev/null; then
+		chroot "$TARGET" wget -O /dev/null https://google.com 2> /dev/null
 		echo "${0##*/}: we just installed ca-certificates, but still cannot download https://google.com, possible reasons: no internet connection, DNS problems, https://google.com is down, google.com banned us for too many requests" >&2
 		exit 1
 	fi
@@ -331,14 +334,15 @@ _target_install_tarball(){
 	(
 		trap "rm -r '$TEMP'" EXIT
 
-		( cd "$TARGET"; tar -xzv ) < "$TARBALL" > "$TEMP/list"
-
-		chroot "$TARGET" ldconfig 2> /dev/null || :
+		# -h - это --dereference, она нужна обязательно. Однажды без неё я порушил Gentoo, там перестал работать emerge
+		( cd "$TARGET"; tar -xzhv ) < "$TARBALL" > "$TEMP/list"
 
 		sed -e 's/^\.//' -e 's~^/$~/.~' -e 's~/$~~' "$TEMP/list" > "$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list"
 
 		# Делаем cat'ом, чтобы файл создался с нужными правами и владельцем
 		cat "$CONTROL" > "$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE.control"
+
+		chroot "$TARGET" ldconfig 2> /dev/null || :
 
 		if _is_target_command ldd; then
 			while IFS="" read -r FILE; do
@@ -351,12 +355,20 @@ _target_install_tarball(){
 				if [ -s "$TEMP/ldd-error" ]; then
 					cat "$TEMP/ldd-error"
 					echo "${0##*/}: link errors, removing package back" >&2
-					_target_remove_native "$PACKAGE"
+					_target_remove_native_low_level "$PACKAGE"
 					exit 1
 				fi
 			done < "$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list"
 		else
 			echo "${0##*/}: warning: no ldd, cannot be sure everything is linked properly" >&2
+		fi
+
+		if [ -x "$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE.postinst" ]; then
+			if ! chroot "$TARGET" "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.postinst"; then
+				echo "${0##*/}: postinst failed, removing back" >&2
+				_target_remove_native_low_level "$PACKAGE"
+				exit 1
+			fi
 		fi
 	)
 }
@@ -473,7 +485,7 @@ _target_install_package(){
 		esac
 }
 
-_target_remove_native(){
+_target_remove_native_low_level(){
 		local PACKAGE="$(tpm_anz "$1")"
 		tpm_az "$2"
 
@@ -482,21 +494,6 @@ _target_remove_native(){
 		tpm_assert tpm_is_command sort
 		
 		tpm_assert _is_target_db
-		tpm_assert _is_target_native_installed "$PACKAGE"
-
-		(
-			local OLD_PWD="$PWD"
-			cd "$TARGET/opt/tpm-store/var/lib/tpm/info"
-
-			for I in */*.control; do
-				tpm_source "$I"
-
-				for J in $DEPENDS; do
-					[ "$J" = "$PACKAGE" ] && ( cd "$OLD_PWD"; _target_remove_native "${I%.control}" )
-					:
-				done
-			done
-		)
 
 		local TEMP="$(tpm_mktemp_directory)"
 
@@ -518,6 +515,36 @@ _target_remove_native(){
 		)
 
 		rm "$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE".*
+}
+
+_target_remove_native(){
+		local PACKAGE="$(tpm_anz "$1")"
+		tpm_az "$2"
+
+		tpm_assert tpm_is_root
+
+		tpm_assert _is_target_db
+		tpm_assert _is_target_native_installed "$PACKAGE"
+
+		(
+			local OLD_PWD="$PWD"
+			cd "$TARGET/opt/tpm-store/var/lib/tpm/info"
+
+			for I in */*.control; do
+				tpm_source "$I"
+
+				for J in $DEPENDS; do
+					[ "$J" = "$PACKAGE" ] && ( cd "$OLD_PWD"; _target_remove_native "${I%.control}" )
+					:
+				done
+			done
+		)
+
+		if [ -x "$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE.prerm" ]; then
+			"$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE.prerm" || :
+		fi
+
+		_target_remove_native_low_level "$PACKAGE"
 }
 
 _target_build(){
@@ -664,6 +691,7 @@ EOF
 	exit 1
 }
 
+# Занимательный факт: в приложении gnuroot debian на android, если . - это /, то chroot / работает, а chroot . - нет
 EAT_TARGET='shift; case "$1" in --root=*) TARGET="${1#--root=}"; shift;; *) TARGET=/;; esac'
 
 case "$1" in
@@ -754,6 +782,14 @@ case "$1" in
 		tpm_assert tpm_is_root
 
 		tpm_assert _is_target_db
+
+		cd "$TARGET/opt/tpm-store/var/lib/tpm/info"
+
+		for I in */*.list; do
+			if [ -e "$I" ]; then
+				_target_remove_native "${I%.list}"
+			fi
+		done
 
 		echo "Deinitializing"
 
