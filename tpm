@@ -590,7 +590,7 @@ _target_build(){
 			mkdir "$TEMP/build"
 
 			# Мы вынуждены патчить ещё и CFLAGS и CXXFLAGS, т. к. cmake игнорирует CPPFLAGS
-			PREFIX=/opt/tpm-store DESTDIR="$INTERNAL_TEMP/destdir" SRC="$INTERNAL_TEMP/${PACKAGE##*/}-master" BUILD="$INTERNAL_TEMP/build" CPPFLAGS="$CPPFLAGS -I/opt/tpm-store/include" CFLAGS="$CFLAGS -I/opt/tpm-store/include" CXXFLAGS="$CXXFLAGS -I/opt/tpm-store/include" LDFLAGS="$LDFLAGS -L/opt/tpm-store/lib" chroot "$TARGET" sh -c "cd \"\$SRC\" || exit 1; $INSTALL"
+			PREFIX=/opt/tpm-store DESTDIR="$INTERNAL_TEMP/destdir" SRC="$INTERNAL_TEMP/${PACKAGE##*/}-master" BUILD="$INTERNAL_TEMP/build" INFO="/opt/tpm-store/var/lib/tpm/${PACKAGE%/*}" CPPFLAGS="$CPPFLAGS -I/opt/tpm-store/include" CFLAGS="$CFLAGS -I/opt/tpm-store/include" CXXFLAGS="$CXXFLAGS -I/opt/tpm-store/include" LDFLAGS="$LDFLAGS -L/opt/tpm-store/lib" chroot "$TARGET" sh -c "cd \"\$SRC\" || exit 1; $INSTALL"
 
 			( cd "$TEMP/destdir"; tar -cz . ) > "$OUTPUT"
 		)
