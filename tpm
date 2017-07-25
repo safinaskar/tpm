@@ -541,7 +541,7 @@ _target_remove_native(){
 		)
 
 		if [ -x "$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE.prerm" ]; then
-			"$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE.prerm" || :
+			chroot "$TARGET" "/opt/tpm-store/var/lib/tpm/info/$PACKAGE.prerm" || :
 		fi
 
 		_target_remove_native_low_level "$PACKAGE"
