@@ -2,7 +2,7 @@ PACKAGE='safinaskar/tpm'
 ARCH='all'
 
 # gunzip - это хак, чтобы работало в Debian installer. На самом деле мы зависим от gzip. По-хорошему нужно разбить на два пакета: один может только ставить, другой - ещё и собирать
-DEPENDS='prog:mktemp:coreutils prog:chroot:coreutils prog:sort:coreutils meta:wget prog:tar:tar prog:gunzip:gzip prog:sed:sed'
+DEPENDS='prog:mktemp:coreutils prog:chroot:coreutils meta:wget prog:tar:tar prog:gunzip:gzip prog:sed:sed'
 BUILD_DEPENDS='prog:cmake:cmake prog:make:make'
 LIBS=''
 INSTALL='[ -e CMakeCache.txt ] && echo "Failed: CMakeCache.txt" && exit 1;'\

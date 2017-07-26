@@ -457,6 +457,14 @@ _target_install_package(){
 				fi
 				;;
 
+			debian:*)
+				local DEBIAN_PACKAGE="${PACKAGE#debian:}"
+
+				if ! dpkg -l "$DEBIAN_PACKAGE" > /dev/null 2> /dev/null; then
+					_target_install_debian_package "$DEBIAN_PACKAGE"
+				fi
+				;;
+
 			*)
 				_is_target_native_installed "$PACKAGE" && return
 
@@ -819,6 +827,23 @@ case "$1" in
 		for I in $TPM_AVAILABLE_BINARIES $TPM_AVAILABLE_COMMANDS; do
 			if ! type "$I" > /dev/null 2>&1; then
 				echo "${0##*/}: no command \"$I\"" >&2
+			fi
+		done
+		;;
+
+	remove-all-but-tpm)
+		eval "$EAT_TARGET"
+		tpm_uz "$1"
+
+		tpm_assert tpm_is_root
+
+		tpm_assert _is_target_db
+
+		cd "$TARGET/opt/tpm-store/var/lib/tpm/info"
+
+		for I in */*.list; do
+			if [ -e "$I" ] && [ "${I%.list}" != safinaskar/tpm ]; then
+				_target_remove_native "${I%.list}"
 			fi
 		done
 		;;
