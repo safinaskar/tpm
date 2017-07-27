@@ -540,11 +540,13 @@ _target_remove_native(){
 			local OLD_PWD="$PWD"
 			cd "$TARGET/opt/tpm-store/var/lib/tpm/info"
 
+			GLOBAL_PACKAGE="$PACKAGE"
+
 			for I in */*.control; do
 				tpm_source "$I"
 
 				for J in $DEPENDS; do
-					[ "$J" = "$PACKAGE" ] && ( cd "$OLD_PWD"; _target_remove_native "${I%.control}" )
+					[ "$J" = "$GLOBAL_PACKAGE" ] && ( cd "$OLD_PWD"; _target_remove_native "${I%.control}" )
 					:
 				done
 			done
