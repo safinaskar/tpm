@@ -650,23 +650,21 @@ _target_init(){
 
 					chroot "$TARGET" sh "${CONFIG_GUESS##*/}" > "$TEMP/arch"
 
-					# Нам нужно преобразовать arch так, чтобы это совпало с multiarch-именем архитектуры
-
-					case "$(cat "$TEMP/arch")" in
-						*-pc-linux-gnu)
-							A="$(cat "$TEMP/arch")"
-							printf '%s\n' "${A%-pc-linux-gnu}-linux-gnu" > "$TEMP/arch"
-							;;
-					esac
-
-					sed 's/^i.86/i386/' "$TEMP/arch" > "$TEMP/a"
-					mv "$TEMP/a" "$TEMP/arch"
-
-					echo "${0##*/}: warning: we will use this arch: $(cat "$TEMP/arch") (based on config.guess), it may be inaccurate, especially if host and target arch differ" >&2
+					echo "${0##*/}: warning: config.guess gave this: $(cat "$TEMP/arch"), we will future process it, it may be inaccurate, especially if host and target arch differ" >&2
 				)
 
 				ARCH="$(cat "$TEMP/arch")"
 			fi
+
+			# Нам нужно преобразовать arch так, чтобы это совпало с multiarch-именем архитектуры
+
+			case "$ARCH" in
+				*-pc-linux-gnu)
+					ARCH="${ARCH%-pc-linux-gnu}-linux-gnu"
+					;;
+			esac
+
+			ARCH="$(printf '%s\n' | sed 's/^i.86/i386/')"
 
 			echo "Initializing"
 
