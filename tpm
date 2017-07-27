@@ -664,7 +664,7 @@ _target_init(){
 					;;
 			esac
 
-			ARCH="$(printf '%s\n' | sed 's/^i.86/i386/')"
+			ARCH="$(printf '%s\n' "$ARCH" | sed 's/^i.86/i386/')"
 
 			echo "Initializing"
 
