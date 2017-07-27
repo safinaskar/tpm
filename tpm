@@ -313,6 +313,7 @@ _target_install_tarball(){
 
 	tpm_assert _is_target_db
 
+	(
 	tpm_source "$CONTROL"
 
 	tpm_assert tpm_is_not _is_target_native_installed "$PACKAGE"
@@ -369,6 +370,7 @@ _target_install_tarball(){
 				exit 1
 			fi
 		fi
+	)
 	)
 }
 
@@ -462,9 +464,13 @@ _target_install_package(){
 
 				tpm_assert _is_target_command dpkg
 
-				if ! chroot "$TARGET" dpkg -l "$DEBIAN_PACKAGE" > /dev/null 2> /dev/null; then
-					_target_install_debian_package "$DEBIAN_PACKAGE"
-				fi
+				case "$(chroot "$TARGET" dpkg-query -W -f='${Status}\n' "$DEBIAN_PACKAGE" 2> /dev/null || :)" in
+					*" installed")
+						return 0
+						;;
+				esac
+
+				_target_install_debian_package "$DEBIAN_PACKAGE"
 				;;
 
 			*)
@@ -543,12 +549,14 @@ _target_remove_native(){
 			GLOBAL_PACKAGE="$PACKAGE"
 
 			for I in */*.control; do
-				tpm_source "$I"
+				(
+					tpm_source "$I"
 
-				for J in $DEPENDS; do
-					[ "$J" = "$GLOBAL_PACKAGE" ] && ( cd "$OLD_PWD"; _target_remove_native "${I%.control}" )
-					:
-				done
+					for J in $DEPENDS; do
+						[ "$J" = "$GLOBAL_PACKAGE" ] && ( cd "$OLD_PWD"; _target_remove_native "${I%.control}" )
+						:
+					done
+				)
 			done
 		)
 
