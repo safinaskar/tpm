@@ -350,13 +350,12 @@ _target_install_tarball(){
 					continue
 				fi
 
-				chroot "$TARGET" ldd "$FILE" > /dev/null 2> "$TEMP/ldd-error" || :
-
-				if [ -s "$TEMP/ldd-error" ]; then
-					cat "$TEMP/ldd-error"
-					echo "${0##*/}: link errors, removing package back" >&2
-					_target_remove_native_low_level "$PACKAGE"
-					exit 1
+				if chroot "$TARGET" ldd "$FILE" > "$TEMP/ldd-output" 2> /dev/null; then
+					if grep ': version .* not found (required by ' "$TEMP/ldd-output" >&2; then
+						echo "${0##*/}: link errors, removing package back" >&2
+						_target_remove_native_low_level "$PACKAGE"
+						exit 1
+					fi
 				fi
 			done < "$TARGET/opt/tpm-store/var/lib/tpm/info/$PACKAGE.list"
 		else
@@ -460,7 +459,9 @@ _target_install_package(){
 			debian:*)
 				local DEBIAN_PACKAGE="${PACKAGE#debian:}"
 
-				if ! dpkg -l "$DEBIAN_PACKAGE" > /dev/null 2> /dev/null; then
+				tpm_assert _is_target_command dpkg
+
+				if ! chroot "$TARGET" dpkg -l "$DEBIAN_PACKAGE" > /dev/null 2> /dev/null; then
 					_target_install_debian_package "$DEBIAN_PACKAGE"
 				fi
 				;;
@@ -645,8 +646,9 @@ _target_init(){
 					chroot "$TARGET" sh "${CONFIG_GUESS##*/}" > "$TEMP/arch"
 
 					case "$(cat "$TEMP/arch")" in
-						x86_64-linux-gnu|x86_64-pc-linux-gnu)
-							echo "x86_64-linux-gnu" > "$TEMP/arch"
+						*-pc-linux-gnu)
+							A="$(cat "$TEMP/arch")"
+							printf '%s\n' "${A%-pc-linux-gnu}-linux-gnu" > "$TEMP/arch"
 							;;
 					esac
 
