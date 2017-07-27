@@ -444,7 +444,7 @@ _target_install_package(){
 					done
 
 					# Это может понадобится, если либа лежит в /usr/lib/gcc/$ARCH/*, а там название архитектуры не совпадает с multiarch arch. Причём если либа лежит там, то cc, скорее всего уже есть
-					if echo 'int main (void) {}' | cc -o /dev/null -x c -l"${LIBRARY#lib}" 2> /dev/null; then
+					if echo 'int main (void) {}' | cc -o /dev/null -x c - -l"${LIBRARY#lib}" 2> /dev/null; then
 						return 0
 					fi
 
