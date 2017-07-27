@@ -654,7 +654,7 @@ _target_init(){
 							;;
 					esac
 
-					sed 's/^i.86/i386' "$TEMP/arch" > "$TEMP/a"
+					sed 's/^i.86/i386/' "$TEMP/arch" > "$TEMP/a"
 					mv "$TEMP/a" "$TEMP/arch"
 
 					echo "${0##*/}: warning: we will use this arch: $(cat "$TEMP/arch") (based on config.guess), it may be inaccurate, especially if host and target arch differ" >&2
