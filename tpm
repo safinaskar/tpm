@@ -713,8 +713,18 @@ usage(){
 
 	cat << EOF >&2
 Usage:
-. tpm # as a shell library
-...
+${0##*/} init [--root=ROOT]
+${0##*/} install-tarball [--root=ROOT] TPM-CONTROL PACKAGE.TAR.GZ
+${0##*/} install [--root=ROOT] PACKAGE
+${0##*/} remove [--root=ROOT] PACKAGE
+${0##*/} list [--root=ROOT]
+${0##*/} build [--root=ROOT] PACKAGE -o OUTPUT.TAR.GZ
+${0##*/} bootstrap [--root=ROOT]
+${0##*/} upgrade [--root=ROOT] PACKAGE (может обновлять себя)
+${0##*/} deinit [--root=ROOT]
+${0##*/} check-commands-host
+${0##*/} remove-all-but-tpm [--root=ROOT]
+eval "\$(${0##*/} shlib)"
 EOF
 
 	exit 1
@@ -793,8 +803,6 @@ case "$1" in
 		;;
 
 	upgrade)
-		# Можно обновлять себя
-
 		eval "$EAT_TARGET"
 		PACKAGE="$(tpm_unz "$1")"
 		tpm_uz "$2"
@@ -836,7 +844,7 @@ case "$1" in
 		:
 		;;
 
-	check-commands)
+	check-commands-host)
 		# Проверяет список захардкоженных команд на хосте и больше ничего не делает
 		tpm_uz "$2"
 
