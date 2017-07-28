@@ -231,7 +231,7 @@ tpm_download(){
 	(
 		trap "rm '$WGET_OUTPUT'" EXIT
 
-		if ! wget -O "$OUTPUT" "$URL" 2> "$WGET_OUTPUT"; then
+		if ! wget --timeout=10 -O "$OUTPUT" "$URL" 2> "$WGET_OUTPUT"; then
 			rm -f "$OUTPUT"
 			if "$FORCE"; then
 				printf 'failed\n'
