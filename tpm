@@ -225,6 +225,7 @@ tpm_download(){
 
 	printf '%s' "Downloading $URL... "
 
+	mkdir -p /tmp 2> /dev/null || :
 	local WGET_OUTPUT="$(mktemp /tmp/tpm-wget-output-XXXXXX)"
 
 	(
@@ -330,6 +331,7 @@ _target_install_tarball(){
 
 	mkdir -p "$TARGET/opt/tpm-store/var/lib/tpm/info/${PACKAGE%/*}"
 
+	mkdir -p /tmp 2> /dev/null || :
 	local TEMP="$(tpm_mktemp_directory)"
 
 	(
@@ -478,6 +480,7 @@ _target_install_package(){
 
 				_target_read_config
 
+				mkdir -p /tmp 2> /dev/null || :
 				local TEMP="$(tpm_mktemp_directory)"
 
 				(
@@ -511,6 +514,7 @@ _target_remove_native_low_level(){
 		
 		tpm_assert _is_target_db
 
+		mkdir -p /tmp 2> /dev/null || :
 		local TEMP="$(tpm_mktemp_directory)"
 
 		(
@@ -582,7 +586,6 @@ _target_build(){
 		tpm_assert _is_target_db
 
 		mkdir -p "$TARGET/tmp"
-
 		local OUTSIDE_TEMP="$(tpm_mktemp_directory "$TARGET/tmp/tpm-XXXXXX")"
 		local TEMP="/tmp/${OUTSIDE_TEMP##*/}"
 
@@ -633,6 +636,7 @@ _target_init(){
 
 		[ -e "$TARGET/opt/tpm-store" ] && echo "${0##*/}: already initialized" >&2 && exit 1
 
+		mkdir -p /tmp 2> /dev/null || :
 		local TEMP="$(tpm_mktemp_directory)"
 
 		(
