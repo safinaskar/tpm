@@ -635,6 +635,8 @@ _target_build(){
 _target_init(){
 		# Эта функция инициализирует систему для установки туда tpm-пакетов. После инициализации полученная система будет содержать 0 пакетов. tpm в ней не нужен, т. к., возможно, мы и дальше будем манипулировать этой системой снаружи. wget в ней тоже не нужен, т. к. опять-таки, возможно, мы и дальше будем скачивать пакеты снаружи и устанавливать туда
 
+		# В этой функции нужно быть осторожным и не вызывать функции, которые требуют db, до инициализации db
+
 		tpm_az "$1"
 
 		tpm_assert tpm_is_root
@@ -667,7 +669,7 @@ _target_init(){
 					_download "http://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess;hb=HEAD" "$CONFIG_GUESS"
 
 					# Некоторые зависимости config.guess
-					_target_install_package prog:sed:sed
+					_target_install_prog_colon sed sed
 					mkdir -p "$TARGET/tmp"
 					# Конец некоторых зависимостей config.guess
 
