@@ -675,7 +675,7 @@ _target_init(){
 
 					chroot "$TARGET" sh "${CONFIG_GUESS##*/}" > "$TEMP/arch"
 
-					echo "${0##*/}: warning: config.guess gave this: $(cat "$TEMP/arch"), we will process it more, it may be inaccurate, especially if host and target arch differ" >&2
+					echo "${0##*/}: warning: config.guess gave this: $(cat "$TEMP/arch"), we will process it more, it may be inaccurate, especially if host and target archs differ" >&2
 				)
 
 				ARCH="$(cat "$TEMP/arch")"
